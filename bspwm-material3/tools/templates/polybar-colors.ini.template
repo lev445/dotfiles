@@ -1,0 +1,91 @@
+;;============================================================================
+;;  colors.ini — Material Design 3 color roles для polybar
+;;----------------------------------------------------------------------------
+;;  СГЕНЕРИРОВАНО АВТОМАТИЧЕСКИ из tools/templates/polybar-colors.ini.template
+;;  Источник правды: generated/theme-state.json → tools/md3_theme.py
+;;
+;;  Каждое имя = роль md.sys.color.* (см. https://m3.material.io/styles/color/roles).
+;;  Формат polybar: #AARRGGBB (альфа ПЕРВЫМ байтом).
+;;
+;;  source color : {{MD3_SOURCE_COLOR}}
+;;  scheme       : {{MD3_SCHEME}} / {{MD3_CONTRAST}} / {{MD3_MODE}}
+;;  генератор    : material-color-utilities (MaterialDynamicColors)
+;;============================================================================
+
+[colors]
+;; --- md.sys.color: surface & content --------------------------------------
+background            = {{PB_SURFACE}}
+on-background         = {{PB_ON_SURFACE}}
+surface               = {{PB_SURFACE}}
+on-surface            = {{PB_ON_SURFACE}}
+surface-variant       = {{PB_SURFACE_VARIANT}}
+on-surface-variant    = {{PB_ON_SURFACE_VARIANT}}
+surface-dim           = {{PB_SURFACE_DIM}}
+surface-bright        = {{PB_SURFACE_BRIGHT}}
+surface-container-lowest  = {{PB_SURFACE_CONTAINER_LOWEST}}
+surface-container-low     = {{PB_SURFACE_CONTAINER_LOW}}
+surface-container         = {{PB_SURFACE_CONTAINER}}
+surface-container-high    = {{PB_SURFACE_CONTAINER_HIGH}}
+surface-container-highest = {{PB_SURFACE_CONTAINER_HIGHEST}}
+inverse-surface       = {{PB_INVERSE_SURFACE}}
+inverse-on-surface    = {{PB_INVERSE_ON_SURFACE}}
+
+;; --- md.sys.color: accents -------------------------------------------------
+primary               = {{PB_PRIMARY}}
+on-primary            = {{PB_ON_PRIMARY}}
+primary-container     = {{PB_PRIMARY_CONTAINER}}
+on-primary-container  = {{PB_ON_PRIMARY_CONTAINER}}
+inverse-primary       = {{PB_INVERSE_PRIMARY}}
+secondary             = {{PB_SECONDARY}}
+on-secondary          = {{PB_ON_SECONDARY}}
+secondary-container   = {{PB_SECONDARY_CONTAINER}}
+on-secondary-container= {{PB_ON_SECONDARY_CONTAINER}}
+tertiary              = {{PB_TERTIARY}}
+on-tertiary           = {{PB_ON_TERTIARY}}
+tertiary-container    = {{PB_TERTIARY_CONTAINER}}
+on-tertiary-container = {{PB_ON_TERTIARY_CONTAINER}}
+error                 = {{PB_ERROR}}
+on-error              = {{PB_ON_ERROR}}
+error-container       = {{PB_ERROR_CONTAINER}}
+on-error-container    = {{PB_ON_ERROR_CONTAINER}}
+
+;; --- md.sys.color: outline -------------------------------------------------
+outline               = {{PB_OUTLINE}}
+outline-variant       = {{PB_OUTLINE_VARIANT}}
+shadow                = {{PB_SHADOW}}
+scrim                 = {{PB_SCRIM}}
+surface-tint          = {{PB_SURFACE_TINT}}
+
+;; --- md.sys.elevation: surface + overlay(surfaceTint) ----------------------
+elevation0            = {{PB_ELEVATION_LEVEL0}}
+elevation1            = {{PB_ELEVATION_LEVEL1}}
+elevation2            = {{PB_ELEVATION_LEVEL2}}
+elevation3            = {{PB_ELEVATION_LEVEL3}}
+elevation4            = {{PB_ELEVATION_LEVEL4}}
+elevation5            = {{PB_ELEVATION_LEVEL5}}
+
+;; --- семантические алиасы для модулей polybar ------------------------------
+;; Панель — surface-container уровня elevation 2 (M3: «bar» = raised surface)
+bar-bg                = {{PB_ELEVATION_LEVEL2}}
+bar-fg                = {{PB_ON_SURFACE}}
+tray-bg               = {{PB_SURFACE_CONTAINER_HIGH}}
+
+;; Рабочие столы (md.comp: navigation-item / primary indicator)
+ws-focused            = {{PB_PRIMARY_CONTAINER}}   ;; фон активного стола
+ws-focused-fg         = {{PB_ON_PRIMARY_CONTAINER}}
+ws-occupied           = {{PB_SECONDARY_CONTAINER}} ;; фон занятого стола
+ws-occupied-fg        = {{PB_ON_SECONDARY_CONTAINER}}
+ws-urgent             = {{PB_ERROR_CONTAINER}}
+ws-urgent-fg          = {{PB_ON_ERROR_CONTAINER}}
+ws-empty              = {{PB_TRANSPARENT}}
+ws-empty-fg           = {{PB_ON_SURFACE_VARIANT}}
+
+;; Акценты модулей
+clock-bg              = {{PB_PRIMARY}}
+clock-fg              = {{PB_ON_PRIMARY}}
+badge-bg              = {{PB_TERTIARY_CONTAINER}}
+badge-fg              = {{PB_ON_TERTIARY_CONTAINER}}
+bar-fill              = {{PB_PRIMARY}}
+bar-empty             = {{PB_SURFACE_CONTAINER_HIGHEST}}
+separator             = {{PB_OUTLINE_VARIANT}}
+transparent           = {{PB_TRANSPARENT}}

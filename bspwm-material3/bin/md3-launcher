@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  md3-launcher — лаунчер приложений в теме Material Design 3
+#-----------------------------------------------------------------------------
+#  Порядок предпочтения: rofi (с сгенерированной rofi/md3.rasi) → wofi →
+#  fuzzel → bemenu → dmenu (цвета берутся из MD3_* токенов окружения).
+#=============================================================================
+set -uo pipefail
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+# CFG_DIR: явный BSPWM_MD3_DIR > каталог, где лежит этот скрипт (../ от bin/) >
+# стандартный ~/.config/bspwm-material3. Автодетект позволяет запускать bin/*
+# прямо из репозитория до установки.
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_repo="$(cd "$(dirname "$(dirname "$_self")")" 2>/dev/null && pwd)"
+if [[ -n "${BSPWM_MD3_DIR:-}" ]]; then
+    CFG_DIR="$BSPWM_MD3_DIR"
+elif [[ -d "$_repo/tools" && -f "$_repo/bspwmrc" ]]; then
+    CFG_DIR="$_repo"
+else
+    CFG_DIR="$XDG_CONFIG_HOME/bspwm-material3"
+fi
+RASI="$CFG_DIR/rofi/md3.rasi"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Токены могут прийти из окружения (их экспортирует bspwmrc) или из theme.conf
+if [[ -z "${MD3_SURFACE:-}" && -r "$CFG_DIR/generated/theme.conf" ]]; then
+    # shellcheck source=/dev/null disable=SC1091
+    source "$CFG_DIR/generated/theme.conf"
+fi
+: "${MD3_SURFACE:=#141218}" "${MD3_ON_SURFACE:=#e6e0e9}"
+: "${MD3_SURFACE_CONTAINER:=#211f24}" "${MD3_SURFACE_CONTAINER_HIGH:=#2b292f}"
+: "${MD3_PRIMARY:=#cfbdfe}" "${MD3_ON_PRIMARY:=#36275d}"
+: "${MD3_PRIMARY_CONTAINER:=#4d3d75}" "${MD3_ON_PRIMARY_CONTAINER:=#e9ddff}"
+: "${MD3_OUTLINE_VARIANT:=#49454f}" "${MD3_ON_SURFACE_VARIANT:=#cac4cf}"
+
+MODE="${1:-drun}"     # drun | run | window
+
+if have rofi; then
+    if [[ -r "$RASI" ]]; then
+        exec rofi -show "$MODE" -theme "$RASI"
+    fi
+    # тема не сгенерирована — собираем её «на лету» из MD3-токенов
+    exec rofi -show "$MODE" -theme-str "
+        window {
+            background-color: ${MD3_SURFACE_CONTAINER};
+            border: 2px; border-color: ${MD3_OUTLINE_VARIANT};
+            border-radius: ${MD3_CORNER_RADIUS:-12}px;
+            width: 640px; padding: 12px;
+        }
+        inputbar { background-color: ${MD3_SURFACE_CONTAINER_HIGH};
+                   border-radius: 8px; padding: 8px 12px;
+                   border: 1px; border-color: ${MD3_ON_SURFACE_VARIANT}; }
+        prompt { text-color: ${MD3_PRIMARY}; }
+        entry  { text-color: ${MD3_ON_SURFACE}; }
+        element { border-radius: 8px; padding: 8px 12px; }
+        element-text { text-color: ${MD3_ON_SURFACE}; }
+        element selected { background-color: ${MD3_PRIMARY_CONTAINER};
+                           text-color: ${MD3_ON_PRIMARY_CONTAINER}; }
+        element normal.active { background-color: ${MD3_PRIMARY_CONTAINER}; }
+    "
+fi
+
+if have fuzzel; then
+    # fuzzel хочет RRGGBBAA без «#»
+    exec fuzzel --show "$MODE" \
+        --background "${MD3_SURFACE_CONTAINER#\#}ff" \
+        --text-color "${MD3_ON_SURFACE#\#}ff" \
+        --selection-color "${MD3_PRIMARY_CONTAINER#\#}ff" \
+        --selection-text-color "${MD3_ON_PRIMARY_CONTAINER#\#}ff" \
+        --border-color "${MD3_OUTLINE_VARIANT#\#}ff" \
+        --border-width 2 --corner-radius "${MD3_CORNER_RADIUS:-12}"
+fi
+
+if have bemenu; then
+    exec bemenu-run --fn "JetBrainsMono Nerd Font 11" \
+        --fb "$MD3_SURFACE_CONTAINER" --ff "$MD3_ON_SURFACE" \
+        --nb "$MD3_SURFACE_CONTAINER" --nf "$MD3_ON_SURFACE" \
+        --hb "$MD3_PRIMARY_CONTAINER" --hf "$MD3_ON_PRIMARY_CONTAINER" \
+        --sb "$MD3_PRIMARY_CONTAINER" --sf "$MD3_ON_PRIMARY_CONTAINER" \
+        --bdr "$MD3_OUTLINE_VARIANT" --ab "$MD3_SURFACE_CONTAINER" --af "$MD3_ON_SURFACE_VARIANT"
+fi
+
+if have wofi; then
+    exec wofi --show "$MODE" --allow-images \
+        --color "background:#${MD3_SURFACE_CONTAINER#\#}" \
+        --color "inner-color:#${MD3_SURFACE_CONTAINER#\#}" \
+        --color "text-color:#${MD3_ON_SURFACE#\#}" \
+        --color "selection-color:#${MD3_ON_PRIMARY_CONTAINER#\#}" \
+        --color "selection-background:#${MD3_PRIMARY_CONTAINER#\#}"
+fi
+
+if have dmenu; then
+    exec dmenu_run -i -fn "JetBrainsMono Nerd Font-11" \
+        -nb "$MD3_SURFACE_CONTAINER" -nf "$MD3_ON_SURFACE" \
+        -sb "$MD3_PRIMARY_CONTAINER" -sf "$MD3_ON_PRIMARY_CONTAINER"
+fi
+
+# совсем ничего нет — сообщаем пользователю
+if have zenity; then
+    zenity --error --title="md3-launcher" \
+        --text="Не найден ни один лаунчер: rofi, fuzzel, bemenu, wofi, dmenu."
+elif have notify-send; then
+    notify-send -u critical "md3-launcher" "Установите rofi (или dmenu/fuzzel/bemenu/wofi)"
+else
+    echo "Установите rofi (или dmenu/fuzzel/bemenu/wofi)" >&2
+fi
+exit 1

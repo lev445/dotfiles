@@ -1,0 +1,178 @@
+/**===========================================================================
+ *  md3.rasi — Material Design 3 тема для rofi
+ *----------------------------------------------------------------------------
+ *  СГЕНЕРИРОВАНО АВТОМАТИЧЕСКИ из tools/templates/rofi-md3.rasi.template
+ *  Источник правды: generated/theme-state.json → tools/md3_theme.py
+ *
+ *  Используется как:  rofi -show drun -theme ~/.config/bspwm-material3/rofi/md3.rasi
+ *  (bin/md3-launcher делает это сам)
+ *
+ *  Метрики — md.sys.shape (corner radius) и md.sys.state (state layer opacity):
+ *    hover   = 8 %  (md.sys.state.hover-state-layer-opacity)
+ *    press   = 12 % (md.sys.state.pressed-state-layer-opacity)
+ *==========================================================================*/
+
+* {
+    /* --- md.sys.color.* ------------------------------------------------- */
+    md3-primary:                #cfbdfeff;
+    md3-on-primary:             #36275dff;
+    md3-primary-container:      #4d3d75ff;
+    md3-on-primary-container:   #e9ddffff;
+    md3-secondary-container:    #4a4458ff;
+    md3-on-secondary-container: #e8def8ff;
+    md3-tertiary:               #efb8c8ff;
+    md3-error:                  #ffb4abff;
+    md3-surface:                #141218ff;
+    md3-surface-container:      #211f24ff;
+    md3-surface-container-high: #2b292fff;
+    md3-on-surface:             #e6e0e9ff;
+    md3-on-surface-variant:     #cac4cfff;
+    md3-outline:                #948f99ff;
+    md3-outline-variant:        #49454eff;
+    /* --- md.sys.state: state layer поверх hover/press -------------------- */
+    md3-hover-layer:            #e6e0e914;
+    md3-press-layer:            #e6e0e91f;
+
+    background-color:           @md3-surface-container;
+    text-color:                 @md3-on-surface;
+    font:                       "JetBrainsMono Nerd Font 11";
+    spacing:                    0;
+}
+
+window {
+    transparency:               "real";
+    background-color:           @md3-surface-container;
+    border:                     2px;
+    border-color:               @md3-outline-variant;   /* md.sys.color.outline-variant */
+    border-radius:              12px; /* md.sys.shape.medium */
+    width:                      640px;
+    location:                   center;
+    y-offset:                   -120px;
+    padding:                    12px;
+    /* md.sys.elevation level 3 */
+}
+
+mainbox {
+    background-color:           transparent;
+    spacing:                    8px;
+    padding:                    4px;
+}
+
+inputbar {
+    background-color:           @md3-surface-container-high;
+    border:                     1px;
+    border-color:               @md3-outline;           /* md.sys.color.outline */
+    border-radius:              8px;                    /* md.sys.shape.small */
+    padding:                    8px 12px;
+    spacing:                    8px;
+    children:                   [ prompt, entry ];
+}
+
+prompt {
+    background-color:           transparent;
+    text-color:                 @md3-primary;
+}
+
+entry {
+    background-color:           transparent;
+    text-color:                 @md3-on-surface;
+    placeholder:                "Поиск…";
+    placeholder-color:          @md3-on-surface-variant;
+    cursor:                     pointer;
+}
+
+listview {
+    background-color:           transparent;
+    columns:                    1;
+    lines:                      8;
+    cycle:                      true;
+    dynamic:                    true;
+    scrollbar:                  false;
+    padding:                    4px 0px;
+}
+
+element {
+    background-color:           transparent;
+    border-radius:              8px;                    /* md.sys.shape.small */
+    padding:                    8px 12px;
+    spacing:                    10px;
+    orientation:                horizontal;
+}
+
+element-icon {
+    background-color:           transparent;
+    size:                       20px;
+    vertical-align:             0.5;
+}
+
+element-text {
+    background-color:           transparent;
+    text-color:                 inherit;
+    vertical-align:             0.5;
+    expand:                     true;
+}
+
+/* --- состояния (md.sys.state) ------------------------------------------- */
+element normal.normal {
+    background-color:           transparent;
+    text-color:                 @md3-on-surface;
+}
+
+element alternate.normal {
+    background-color:           transparent;
+    text-color:                 @md3-on-surface-variant;
+}
+
+element normal.hover,
+element alternate.hover {
+    background-color:           @md3-hover-layer;       /* on-surface @ 8 % */
+    text-color:                 @md3-on-surface;
+}
+
+element normal.active {
+    background-color:           @md3-secondary-container;
+    text-color:                 @md3-on-secondary-container;
+}
+
+element selected.normal {
+    background-color:           @md3-primary-container; /* md.comp: selected container */
+    text-color:                 @md3-on-primary-container;
+}
+
+element selected.hover {
+    background-color:           @md3-press-layer;       /* on-surface @ 12 % */
+    text-color:                 @md3-on-primary-container;
+}
+
+element selected.active {
+    background-color:           @md3-primary;
+    text-color:                 @md3-on-primary;
+}
+
+element urgent,
+element normal.urgent,
+element selected.urgent {
+    background-color:           @md3-error;
+    text-color:                 @md3-on-primary;
+}
+
+/* --- прочие элементы ----------------------------------------------------- */
+message {
+    background-color:           transparent;
+    border-color:               @md3-outline-variant;
+    padding:                    8px;
+}
+
+textbox {
+    background-color:           transparent;
+    text-color:                 @md3-on-surface-variant;
+}
+
+error-message {
+    background-color:           @md3-surface-container;
+    border:                     2px;
+    border-color:               @md3-error;
+    border-radius:              12px;
+    padding:                    12px;
+    text-color:                 @md3-error;
+}

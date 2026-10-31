@@ -1,0 +1,99 @@
+!=============================================================================
+!  Xresources.md3 — Material Design 3 роли как X-ресурсы
+!-----------------------------------------------------------------------------
+!  СГЕНЕРИРОВАНО АВТОМАТИЧЕСКИ из tools/templates/Xresources.template
+!  Применяется командой:  xrdb -merge ~/.config/bspwm-material3/generated/Xresources.md3
+!  (tools/md3-apply делает это сам)
+!
+!  source color : {{MD3_SOURCE_COLOR}}
+!  scheme       : {{MD3_SCHEME}} / {{MD3_CONTRAST}} / {{MD3_MODE}}
+!=============================================================================
+
+!--- md.sys.color.* ---------------------------------------------------------
+#define MD3_primary                {{MD3_PRIMARY}}
+#define MD3_on_primary             {{MD3_ON_PRIMARY}}
+#define MD3_primary_container      {{MD3_PRIMARY_CONTAINER}}
+#define MD3_on_primary_container   {{MD3_ON_PRIMARY_CONTAINER}}
+#define MD3_secondary              {{MD3_SECONDARY}}
+#define MD3_secondary_container    {{MD3_SECONDARY_CONTAINER}}
+#define MD3_on_secondary_container {{MD3_ON_SECONDARY_CONTAINER}}
+#define MD3_tertiary               {{MD3_TERTIARY}}
+#define MD3_tertiary_container     {{MD3_TERTIARY_CONTAINER}}
+#define MD3_on_tertiary_container  {{MD3_ON_TERTIARY_CONTAINER}}
+#define MD3_error                  {{MD3_ERROR}}
+#define MD3_error_container        {{MD3_ERROR_CONTAINER}}
+#define MD3_on_error_container     {{MD3_ON_ERROR_CONTAINER}}
+#define MD3_surface                {{MD3_SURFACE}}
+#define MD3_on_surface             {{MD3_ON_SURFACE}}
+#define MD3_surface_variant        {{MD3_SURFACE_VARIANT}}
+#define MD3_on_surface_variant     {{MD3_ON_SURFACE_VARIANT}}
+#define MD3_surface_container      {{MD3_SURFACE_CONTAINER}}
+#define MD3_surface_container_high {{MD3_SURFACE_CONTAINER_HIGH}}
+#define MD3_outline                {{MD3_OUTLINE}}
+#define MD3_outline_variant        {{MD3_OUTLINE_VARIANT}}
+#define MD3_inverse_surface        {{MD3_INVERSE_SURFACE}}
+#define MD3_inverse_on_surface     {{MD3_INVERSE_ON_SURFACE}}
+
+MD3.primary:                MD3_primary
+MD3.onPrimary:              MD3_on_primary
+MD3.primaryContainer:       MD3_primary_container
+MD3.surface:                MD3_surface
+MD3.onSurface:              MD3_on_surface
+MD3.surfaceContainer:       MD3_surface_container
+MD3.surfaceContainerHigh:   MD3_surface_container_high
+MD3.outline:                MD3_outline
+MD3.outlineVariant:         MD3_outline_variant
+MD3.error:                  MD3_error
+
+!--- dmenu / bemenu ---------------------------------------------------------
+dmenu.background:            MD3_surface_container
+dmenu.foreground:            MD3_on_surface
+dmenu.selBackground:         MD3_primary_container
+dmenu.selForeground:         MD3_on_primary_container
+
+bemenu.colors.background:    MD3_surface_container
+bemenu.colors.text:          MD3_on_surface
+bemenu.colors.selected:      MD3_primary_container
+bemenu.colors.selectedText:  MD3_on_primary_container
+
+!--- xterm ------------------------------------------------------------------
+XTerm*background:            MD3_surface
+XTerm*foreground:            MD3_on_surface
+XTerm*cursorColor:           MD3_primary
+XTerm*highlightColor:        MD3_secondary_container
+
+!--- st (suckless terminal) -------------------------------------------------
+st.background:               MD3_surface
+st.foreground:               MD3_on_surface
+st.cursorColor:              MD3_primary
+
+!--- 16-цветовая палитра терминала из тональных палитр md.ref.palette.* -----
+! Тона подобраны так, чтобы ANSI-цвета оставались в той же HCT-гамме,
+! что и WM (primary/secondary/tertiary/error/neutral).
+#?if TERMINAL_COLORS
+*background:                 MD3_surface
+*foreground:                 MD3_on_surface
+*cursorColor:                MD3_primary
+
+*color0:                     {{MD3_TERM_COLOR0}}
+*color1:                     {{MD3_TERM_COLOR1}}
+*color2:                     {{MD3_TERM_COLOR2}}
+*color3:                     {{MD3_TERM_COLOR3}}
+*color4:                     {{MD3_TERM_COLOR4}}
+*color5:                     {{MD3_TERM_COLOR5}}
+*color6:                     {{MD3_TERM_COLOR6}}
+*color7:                     {{MD3_TERM_COLOR7}}
+*color8:                     {{MD3_TERM_COLOR8}}
+*color9:                     {{MD3_TERM_COLOR9}}
+*color10:                    {{MD3_TERM_COLOR10}}
+*color11:                    {{MD3_TERM_COLOR11}}
+*color12:                    {{MD3_TERM_COLOR12}}
+*color13:                    {{MD3_TERM_COLOR13}}
+*color14:                    {{MD3_TERM_COLOR14}}
+*color15:                    {{MD3_TERM_COLOR15}}
+#?endif
+#?if NO_TERMINAL_COLORS
+! Палитра терминала отключена чекбоксом «MD3 terminal colors».
+*background:                 MD3_surface
+*foreground:                 MD3_on_surface
+#?endif

@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  md3-apply — применить Material Design 3 тему ко всей сессии
+#-----------------------------------------------------------------------------
+#  Что делает:
+#    1. tools/md3_theme.py generate   → generated/theme.conf + theme.json
+#                                       picom.conf, polybar/*.ini, rofi/md3.rasi,
+#                                       generated/Xresources.md3
+#    2. xrdb -merge                   → MD3-палитра для терминалов/dmenu
+#    3. bspc config …                 → рамки/щели/цвета bspwm (если WM жив)
+#    4. плавный рестарт picom/polybar (только со --restart или --all)
+#
+#  Вызывается из bspwmrc при старте и по SIGUSR1, а также из GUI.
+#
+#  Ключи:
+#    --quiet            не печатать progress
+#    --stage=env|wm|services|all   (по умолчанию all)
+#    --restart          перезапустить picom/polybar после применения
+#    --no-restart       не перезапускать (по умолчанию для --stage=env)
+#    --no-xrdb / --no-wm / --no-services
+#=============================================================================
+set -uo pipefail
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+# CFG_DIR: явный BSPWM_MD3_DIR > каталог, где лежит этот скрипт (../ от bin/) >
+# стандартный ~/.config/bspwm-material3. Автодетект позволяет запускать bin/*
+# прямо из репозитория до установки.
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_repo="$(cd "$(dirname "$(dirname "$_self")")" 2>/dev/null && pwd)"
+if [[ -n "${BSPWM_MD3_DIR:-}" ]]; then
+    CFG_DIR="$BSPWM_MD3_DIR"
+elif [[ -d "$_repo/tools" && -f "$_repo/bspwmrc" ]]; then
+    CFG_DIR="$_repo"
+else
+    CFG_DIR="$XDG_CONFIG_HOME/bspwm-material3"
+fi
+STATE_DIR="$XDG_STATE_HOME/bspwm-md3"
+LOG_DIR="$STATE_DIR/log"
+PID_DIR="$STATE_DIR/pid"
+mkdir -p "$LOG_DIR" "$PID_DIR"
+
+QUIET=0 STAGE="all" RESTART=auto
+for arg in "$@"; do
+    case "$arg" in
+        --quiet|-q) QUIET=1 ;;
+        --stage=*)  STAGE="${arg#*=}" ;;
+        --restart)  RESTART=yes ;;
+        --no-restart) RESTART=no ;;
+        --no-xrdb)  STAGE_SKIP_XRDB=1 ;;
+        --no-wm)    STAGE_SKIP_WM=1 ;;
+        --no-services) STAGE_SKIP_SERVICES=1 ;;
+        -h|--help)  sed -n '2,25p' "$0"; exit 0 ;;
+    esac
+done
+
+say() { [[ "$QUIET" -eq 1 ]] || printf '\033[38;5;147m[md3]\033[0m %s\n' "$*"; }
+warn() { printf '\033[38;5;216m[md3]\033[0m %s\n' "$*" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
+want() { # want <stage> — нужно ли выполнять этап
+    [[ "$STAGE" == "all" || "$STAGE" == "$1" ]]
+}
+
+PYTHON="${MD3_PYTHON:-python3}"
+have "$PYTHON" || { warn "python3 не найден — без него тему не пересобрать"; exit 1; }
+
+#=============================================================================
+# 1. Генерация конфигов из темы
+#=============================================================================
+if want generate; then
+    say "генерирую конфиги из generated/theme-state.json"
+    if ! "$PYTHON" "$CFG_DIR/tools/md3_theme.py" generate >"$LOG_DIR/md3-generate.log" 2>&1; then
+        warn "md3_theme.py generate завершился с ошибкой (см. $LOG_DIR/md3-generate.log)"
+        tail -5 "$LOG_DIR/md3-generate.log" >&2
+    fi
+fi
+
+# читаем свежие токены в окружение этого скрипта
+if [[ -r "$CFG_DIR/generated/theme.conf" ]]; then
+    # shellcheck source=/dev/null disable=SC1091
+    source "$CFG_DIR/generated/theme.conf"
+    while IFS= read -r v; do [[ -n "$v" ]] && export "${v?}"; done < <(compgen -v MD3_)
+else
+    warn "generated/theme.conf отсутствует — использую переменные окружения"
+fi
+
+#=============================================================================
+# 2. Окружение: Xresources, обои, DPI
+#=============================================================================
+if want env && [[ -z "${STAGE_SKIP_XRDB:-}" ]]; then
+    if have xrdb && [[ -r "$CFG_DIR/generated/Xresources.md3" ]]; then
+        xrdb -merge "$CFG_DIR/generated/Xresources.md3" 2>/dev/null \
+            && say "xrdb: MD3-палитра терминала загружена" \
+            || warn "xrdb -merge не сработал"
+    elif [[ ! -d /tmp/.X11-unix ]]; then
+        say "нет X-сервера — xrdb пропускаю (headless)"
+    fi
+fi
+
+if want env && [[ -z "${STAGE_SKIP_WALLPAPER:-}" ]]; then
+    WALL=""
+    for cand in "$CFG_DIR/wallpapers/md3-${MD3_MODE:-dark}.png" \
+                "$CFG_DIR/wallpapers/md3-${MD3_MODE:-dark}.svg" \
+                "$CFG_DIR/wallpapers/md3.png"; do
+        [[ -r "$cand" ]] && { WALL="$cand"; break; }
+    done
+    if [[ -n "$WALL" ]]; then
+        if have feh;       then feh --bg-fill "$WALL" 2>/dev/null && say "обои: feh → $WALL"
+        elif have nitrogen; then nitrogen --set-zoom-fill "$WALL" >/dev/null 2>&1 && say "обои: nitrogen → $WALL"
+        elif have xwallpaper; then xwallpaper --zoom "$WALL" 2>/dev/null && say "обои: xwallpaper → $WALL"
+        elif have bspc; then bspc config background "$WALL" 2>/dev/null
+        else say "обои: нет feh/nitrogen/xwallpaper — пропускаю"
+        fi
+    fi
+fi
+
+#=============================================================================
+# 3. bspwm: геометрия и цвета рамок из ролей md.sys.color
+#=============================================================================
+if want wm && [[ -z "${STAGE_SKIP_WM:-}" ]]; then
+    if have bspc && bspc wm -g >/dev/null 2>&1; then
+        bspc config border_width "${MD3_BORDER_WIDTH:-2}"
+        bspc config window_gap   "${MD3_GAP:-12}"
+        bspc config left_padding  "${MD3_PADDING:-16}"
+        bspc config right_padding "${MD3_PADDING:-16}"
+        bspc config top_monocle_padding    "${MD3_PADDING:-16}"
+        bspc config bottom_monocle_padding "${MD3_PADDING:-16}"
+        bspc config left_monocle_padding   "${MD3_PADDING:-16}"
+        bspc config right_monocle_padding  "${MD3_PADDING:-16}"
+
+        # primary / secondary / outline-variant / surface-container-highest / error
+        bspc config focused_border_color  "${BSPWM_FOCUSED:-${MD3_PRIMARY:-#cfbdfe}}"
+        bspc config active_border_color   "${BSPWM_ACTIVE:-${MD3_SURFACE_CONTAINER_HIGHEST:-#36343b}}"
+        bspc config normal_border_color   "${BSPWM_NORMAL:-${MD3_OUTLINE_VARIANT:-#49454f}}"
+        bspc config presel_feedback_color "${BSPWM_PRESPLIT:-${MD3_TERTIARY:-#efb8c8}}"
+
+        # bspwm перерисовывает рамки сразу после `bspc config *_border_color`,
+        # поэтому `bspc wm -r` (перечитывание bspwmrc) здесь НЕ нужен — иначе
+        # сервисы запустились бы второй раз.
+        say "bspwm: border ${MD3_BORDER_WIDTH:-2}px, gap ${MD3_GAP:-12}px, focused=${MD3_PRIMARY:-…}"
+    else
+        say "bspwm не отвечает — настройки WM пропускаю"
+    fi
+fi
+
+#=============================================================================
+# 4. Сервисы: picom и polybar
+#=============================================================================
+restart_picom() {
+    have picom || { warn "picom не установлен"; return 1; }
+    if [[ -r "$PID_DIR/picom.pid" ]] && kill -0 "$(cat "$PID_DIR/picom.pid")" 2>/dev/null; then
+        kill "$(cat "$PID_DIR/picom.pid")" 2>/dev/null; sleep 0.3
+    fi
+    pkill -x picom 2>/dev/null; sleep 0.2
+    picom --config "$CFG_DIR/picom.conf" --log-file "$LOG_DIR/picom.log" &
+    echo $! > "$PID_DIR/picom.pid"
+    say "picom перезапущен (pid $(cat "$PID_DIR/picom.pid"))"
+}
+
+restart_polybar() {
+    have polybar || { warn "polybar не установлен"; return 1; }
+    if have polybar-msg; then
+        polybar-msg cmd restart >/dev/null 2>&1 && { say "polybar: restart через IPC"; return 0; }
+    fi
+    pkill -x polybar 2>/dev/null; sleep 0.3
+    polybar -c "$CFG_DIR/polybar/config.ini" -r md3 >>"$LOG_DIR/polybar.log" 2>&1 &
+    echo $! > "$PID_DIR/polybar.pid"
+    say "polybar перезапущен (pid $(cat "$PID_DIR/polybar.pid"))"
+}
+
+if want services && [[ -z "${STAGE_SKIP_SERVICES:-}" ]]; then
+    need_restart=0
+    if [[ "$RESTART" == "yes" ]]; then
+        need_restart=1
+    elif [[ "$RESTART" == "auto" ]]; then
+        # рестарт нужен только если сервисы уже запущены (т.е. мы не на старте WM)
+        [[ -r "$PID_DIR/picom.pid" ]] && kill -0 "$(cat "$PID_DIR/picom.pid")" 2>/dev/null && need_restart=1
+    fi
+    if [[ "$need_restart" -eq 1 ]]; then
+        restart_picom
+        restart_polybar
+    else
+        say "сервисы не трогаю (--stage=$STAGE, рестарт не требуется)"
+    fi
+fi
+
+say "готово: ${MD3_SOURCE_COLOR:-?} · ${MD3_SCHEME:-?}/${MD3_CONTRAST:-?}/${MD3_MODE:-?} · radius ${MD3_CORNER_RADIUS:-12}dp"
+exit 0

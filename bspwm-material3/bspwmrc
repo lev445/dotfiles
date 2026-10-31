@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  bspwmrc — Material Design 3
+#-----------------------------------------------------------------------------
+#  Архитектура цвета (см. README.md → «Как это устроено»):
+#
+#    generated/theme-state.json      ← состояние (что накликали в GUI)
+#              │  tools/md3_theme.py
+#              ▼
+#    generated/theme.conf            ← MD3-токены в виде shell-переменных
+#              │  source
+#              ▼
+#    bspwmrc (этот файл)             ← bspc config + экспорт окружения
+#              │  tools/md3-apply
+#              ▼
+#    picom.conf · polybar/colors.ini · Xresources · rofi/md3.rasi
+#
+#  Все цвета — роли md.sys.color.* (Material Color Utilities), никаких
+#  «случайных» hex-кодов. Править тему нужно не здесь, а через
+#  tools/md3-theme-gui.py (или `md3_theme.py set …`), но переменные ниже
+#  можно переопределить и вручную — до запуска сервисов.
+#
+#  Сигналы:
+#    SIGTERM/SIGINT/SIGQUIT → корректно остановить сервисы и выйти
+#    SIGHUP                 → перезапуск конфига (bspc wm -r / kill -HUP)
+#    SIGUSR1                → перечитать тему БЕЗ рестарта сервисов
+#=============================================================================
+# shellcheck shell=bash
+
+# -e не включаем намеренно: падение одного необязательного инструмента
+# (xrdb, feh, bspc-правило) не должно ронять всю сессию.
+set -uo pipefail
+IFS=$'\n\t'
+
+#----------------------------------------------------------------------------
+# 0. Пути, лог, окружение
+#----------------------------------------------------------------------------
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+
+export CFG_DIR="${BSPWM_MD3_DIR:-$XDG_CONFIG_HOME/bspwm-material3}"
+export STATE_DIR="$XDG_STATE_HOME/bspwm-md3"
+export LOG_DIR="$STATE_DIR/log"
+export MD3_PID_DIR="$STATE_DIR/pid"
+mkdir -p "$LOG_DIR" "$MD3_PID_DIR" "$XDG_CACHE_HOME"
+
+# Собственный PID — по нему bin/md3-reload шлёт USR1/HUP (перечитать тему /
+# перезапустить конфиг). pkill по имени процесса для этого ненадёжен.
+echo $$ > "$MD3_PID_DIR/bspwmrc.pid"
+
+# PATH: локальные бинарники + bin этого конфига (md3-apply, md3-menu, …)
+export PATH="$HOME/.local/bin:$HOME/bin:$CFG_DIR/bin:$PATH"
+
+MAIN_LOG="$LOG_DIR/bspwmrc.log"
+log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" | tee -a "$MAIN_LOG" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+#----------------------------------------------------------------------------
+# 1. MD3-ТОКЕНЫ
+#    Сначала — «аварийные» значения (чтобы WM поднялся даже без theme.conf),
+#    затем их перекрывает сгенерированная тема.
+#    Полный список ролей: tools/md3_theme.py export shell
+#----------------------------------------------------------------------------
+# md.sys.color.* — baseline M3 (source color #6750A4, tonal-spot, dark)
+MD3_PRIMARY='#cfbdfe'                 MD3_ON_PRIMARY='#36275d'
+MD3_PRIMARY_CONTAINER='#4d3d75'       MD3_ON_PRIMARY_CONTAINER='#e9ddff'
+MD3_SECONDARY='#cbc2db'               MD3_ON_SECONDARY='#322d40'
+MD3_SECONDARY_CONTAINER='#4a4458'     MD3_ON_SECONDARY_CONTAINER='#e8dfec'
+MD3_TERTIARY='#efb8c8'                MD3_ON_TERTIARY='#4a2533'
+MD3_TERTIARY_CONTAINER='#633b48'      MD3_ON_TERTIARY_CONTAINER='#ffd9e3'
+MD3_ERROR='#ffb4ab'                   MD3_ON_ERROR='#690005'
+MD3_ERROR_CONTAINER='#93000a'         MD3_ON_ERROR_CONTAINER='#ffdad6'
+MD3_SURFACE='#141218'                 MD3_ON_SURFACE='#e6e0e9'
+MD3_SURFACE_VARIANT='#49454f'         MD3_ON_SURFACE_VARIANT='#cac4cf'
+MD3_SURFACE_CONTAINER='#211f26'       MD3_SURFACE_CONTAINER_HIGH='#2b2930'
+MD3_SURFACE_CONTAINER_HIGHEST='#36343b'
+MD3_SURFACE_CONTAINER_LOW='#1c1b20'   MD3_SURFACE_CONTAINER_LOWEST='#0e0e11'
+MD3_SURFACE_BRIGHT='#3b383e'          MD3_SURFACE_DIM='#141218'
+MD3_OUTLINE='#948f99'                 MD3_OUTLINE_VARIANT='#49454f'
+MD3_INVERSE_SURFACE='#e6e0e9'         MD3_INVERSE_ON_SURFACE='#322f35'
+MD3_INVERSE_PRIMARY='#6750a4'         MD3_SURFACE_TINT='#cfbdfe'
+MD3_SCRIM='#000000'                   MD3_SHADOW='#000000'
+# md.sys.shape / spacing
+MD3_CORNER_RADIUS='12'                MD3_GAP='12'
+MD3_PADDING='16'                      MD3_BORDER_WIDTH='2'
+# md.sys.elevation (surface + overlay surfaceTint)
+MD3_ELEVATION_LEVEL1='#1d1b24'        MD3_ELEVATION_LEVEL2='#23202a'
+MD3_ELEVATION_LEVEL3='#292531'
+# прочее
+MD3_MODE='dark'                       MD3_SCHEME='tonal-spot'
+MD3_SOURCE_COLOR='#6750A4'            MD3_CONTRAST='standard'
+
+if [[ -r "$CFG_DIR/generated/theme.conf" ]]; then
+    # shellcheck source=/dev/null disable=SC1091
+    source "$CFG_DIR/generated/theme.conf"
+    log "theme: $MD3_SOURCE_COLOR · $MD3_SCHEME/$MD3_CONTRAST/$MD3_MODE · radius ${MD3_CORNER_RADIUS}dp"
+else
+    log "theme.conf не найден — использую встроенные baseline-токены (запустите tools/md3_theme.py generate)"
+fi
+
+# Семантика рамок bspwm через роли MD3 (md.sys.color):
+#   focused          → primary                (самый важный элемент)
+#   focused_occupied → secondary              (занятый, но не «главный»)
+#   normal           → outline-variant        (низкий акцент, разделители)
+#   active           → surface-container-high (неактивный монитор)
+#   urgent           → error
+BSPWM_FOCUSED="${BSPWM_FOCUSED:-$MD3_PRIMARY}"
+BSPWM_FOCUSED_OCCUPIED="${BSPWM_FOCUSED_OCCUPIED:-$MD3_SECONDARY}"
+BSPWM_NORMAL="${BSPWM_NORMAL:-$MD3_OUTLINE_VARIANT}"
+BSPWM_ACTIVE="${BSPWM_ACTIVE:-$MD3_SURFACE_CONTAINER_HIGHEST}"
+BSPWM_URGENT="${BSPWM_URGENT:-$MD3_ERROR}"
+BSPWM_PRESPLIT="${BSPWM_PRESPLIT:-$MD3_TERTIARY}"
+
+# Экспортируем токены: их видят picom/polybar/sxhkd/терминалы, запущенные отсюда,
+# а также bin/md3-* скрипты.
+while IFS= read -r _md3_var; do
+    [[ -n "$_md3_var" ]] && export "${_md3_var?}"
+done < <(compgen -v MD3_ ; compgen -v BSPWM_)
+unset _md3_var
+
+# Терминал и лаунчер (их тоже можно перекрыть в theme-state.json)
+export TERMINAL="${TERMINAL:-${MD3_TERMINAL:-alacritty}}"
+have "$TERMINAL" || for t in alacritty kitty wezterm foot xterm; do
+    have "$t" && { export TERMINAL="$t"; break; }
+done
+export MD3_LAUNCHER="${MD3_LAUNCHER:-rofi}"
+
+#----------------------------------------------------------------------------
+# 2. Обработка сигналов и жизненный цикл сервисов
+#----------------------------------------------------------------------------
+RUNNING=1
+declare -a CHILD_NAMES=() CHILD_PIDS=()
+# как перезапускать каждый сервис (имя → команда)
+declare -A RELAUNCH=()
+
+# Остановить всё в обратном порядке запуска (sxhkd → polybar → picom)
+shutdown_all() {
+    RUNNING=0
+    trap - TERM INT QUIT HUP USR1          # не ловим сигналы во время очистки
+    log "shutdown: останавливаю сервисы…"
+    local i name pid
+    for (( i=${#CHILD_NAMES[@]}-1; i>=0; i-- )); do
+        name="${CHILD_NAMES[$i]}"; pid="${CHILD_PIDS[$i]}"
+        [[ -z "$pid" ]] && continue
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" 2>/dev/null
+            # даём 10×50 мс на graceful stop, потом SIGKILL
+            for _ in {1..10}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+            kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid" 2>/dev/null; log "  $name: SIGKILL"; }
+        fi
+        rm -f "$MD3_PID_DIR/$name.pid"
+    done
+    CHILD_NAMES=(); CHILD_PIDS=()
+}
+
+on_term() { log "получен SIG$1"; shutdown_all; exit 0; }
+on_hup()  {
+    log "SIGHUP: перечитываю конфиг"
+    shutdown_all
+    exec "$0"
+}
+on_usr1() {
+    log "SIGUSR1: применяю тему без рестарта сервисов"
+    if [[ -x "$CFG_DIR/tools/md3-apply" ]]; then
+        "$CFG_DIR/tools/md3-apply" --quiet
+    elif have md3-apply; then
+        md3-apply --quiet
+    fi
+}
+
+trap 'on_term TERM' TERM
+trap 'on_term INT'  INT
+trap 'on_term QUIT' QUIT
+trap 'on_hup HUP'   HUP
+trap 'on_usr1 USR1' USR1
+
+# Зарегистрировать сервис (имя + команда перезапуска)
+register() {
+    local name="$1" pid="$2"; shift 2
+    CHILD_NAMES+=("$name"); CHILD_PIDS+=("$pid")
+    # printf %q — чтобы eval при перезапуске не порезал аргументы
+    RELAUNCH["$name"]="$(printf '%q ' "$@")"
+    echo "$pid" > "$MD3_PID_DIR/$name.pid"
+}
+
+# Запустить сервис и запомнить его. Порядок важен:
+#   1) picom   — композитор должен быть готов до появления панели
+#   2) polybar — панель рисуется поверх композитора и забирает tray
+#   3) sxhkd   — хоткеи подключаем последними, когда всё уже живо
+launch() {
+    local name="$1"; shift
+    if ! have "$1"; then
+        log "⚠ $name: '$1' не найден в PATH — пропускаю"
+        return 1
+    fi
+    "$@" >>"$LOG_DIR/$name.log" 2>&1 &
+    local pid=$!
+    register "$name" "$pid" "$@"
+    log "▶ $name (pid $pid): $(printf '%s ' "$@")"
+}
+
+# picom любит падать, если стартует раньше, чем bspwm поднял root-окно,
+# поэтому пробуем несколько раз с небольшой паузой.
+launch_with_retry() {
+    local name="$1" tries="${2:-3}" delay="${3:-0.4}"; shift 3
+    if ! have "$1"; then
+        log "⚠ $name: '$1' не найден в PATH — пропускаю"
+        return 1
+    fi
+    local n pid
+    for (( n=1; n<=tries; n++ )); do
+        "$@" >>"$LOG_DIR/$name.log" 2>&1 &
+        pid=$!
+        sleep "$delay"
+        if kill -0 "$pid" 2>/dev/null; then
+            register "$name" "$pid" "$@"
+            log "▶ $name (pid $pid, попытка $n/$tries): $(printf '%s ' "$@")"
+            return 0
+        fi
+        log "⚠ $name: попытка $n/$tries не удалась (см. $LOG_DIR/$name.log)"
+    done
+    return 1
+}
+
+# Присмотр за сервисами. ВАЖНО: вызывается из ГЛАВНОГО шелла (не из сабшелла),
+# иначе массивы PID остались бы в копии и супервизор плодил бы дубликаты.
+supervise() {
+    local i name pid
+    for (( i=0; i<${#CHILD_NAMES[@]}; i++ )); do
+        name="${CHILD_NAMES[$i]}"; pid="${CHILD_PIDS[$i]}"
+        [[ -z "$pid" || "$RUNNING" -ne 1 ]] && continue
+        if ! kill -0 "$pid" 2>/dev/null; then
+            log "↻ $name (pid $pid) завершился — перезапускаю"
+            CHILD_PIDS[$i]=""
+            # RELAUNCH хранит команду строкой; пробелы в путях не поддерживаем
+            eval "launch_with_retry '$name' 2 0.3 ${RELAUNCH[$name]}" \
+                || eval "launch '$name' ${RELAUNCH[$name]}"
+        fi
+    done
+}
+
+# Heartbeat: отдельный лёгкий процесс, который будит главный шелл по USR2,
+# чтобы supervise() периодически выполнялся даже без событий.
+heartbeat() {
+    local parent=$1
+    while :; do
+        sleep "${MD3_WATCHDOG_INTERVAL:-5}"
+        kill -USR2 "$parent" 2>/dev/null || exit 0
+    done
+}
+
+#----------------------------------------------------------------------------
+# 3. bspwm: рабочие столы, геометрия, цвета, правила
+#----------------------------------------------------------------------------
+if have bspc; then
+    # --- мониторы и столы ---------------------------------------------------
+    # Имена столов — цифры: polybar рисует их как «пилюли» (md.comp.primary
+    # indicator), а переключение super+1..9 работает из коробки.
+    mapfile -t MONITORS < <(bspc query -M 2>/dev/null)
+    case "${#MONITORS[@]}" in
+        0) bspc monitor -d 1 2 3 4 5 6 7 8 9 2>/dev/null ;;
+        1) bspc monitor "${MONITORS[0]}" -d 1 2 3 4 5 6 7 8 9 2>/dev/null ;;
+        *)
+            bspc monitor "${MONITORS[0]}" -d 1 2 3 4 5 6 2>/dev/null
+            bspc monitor "${MONITORS[1]}" -d 7 8 9 2>/dev/null
+            idx=10
+            for m in "${MONITORS[@]:2}"; do
+                bspc monitor "$m" -d "$idx" $((idx + 1)) $((idx + 2)) 2>/dev/null
+                idx=$((idx + 3))
+            done
+            ;;
+    esac
+
+    # --- геометрия (md.sys.spacing: 4 / 8 / 12 / 16) ------------------------
+    bspc config border_width "${MD3_BORDER_WIDTH:-2}"
+    bspc config window_gap   "${MD3_GAP:-12}"
+    # Отступ сверху НЕ задаём: polybar с override-redirect отдаёт EWMH-strut,
+    # и bspwm сам резервирует место под панель (иначе получился бы двойной
+    # отступ). MD3_PADDING используется как дополнительный «воздух» по краям.
+    bspc config top_padding    0
+    bspc config bottom_padding 0
+    bspc config left_padding   "${MD3_PADDING:-16}"
+    bspc config right_padding  "${MD3_PADDING:-16}"
+    bspc config ignore_ewmh_struts false
+    # monocle: без рамок и щелей, но с дыханием по краям
+    bspc config borderless_monocle   true
+    bspc config gapless_monocle      true
+    bspc config top_monocle_padding    "${MD3_PADDING:-16}"
+    bspc config bottom_monocle_padding "${MD3_PADDING:-16}"
+    bspc config left_monocle_padding   "${MD3_PADDING:-16}"
+    bspc config right_monocle_padding  "${MD3_PADDING:-16}"
+
+    # --- цвета рамок из ролей md.sys.color ---------------------------------
+    bspc config focused_border_color "$BSPWM_FOCUSED"          # primary
+    bspc config active_border_color  "$BSPWM_ACTIVE"            # surface-container-highest
+    bspc config normal_border_color  "$BSPWM_NORMAL"            # outline-variant
+    bspc config presel_feedback_color "$BSPWM_PRESPLIT"         # tertiary
+
+    # --- поведение ----------------------------------------------------------
+    bspc config focus_follows_pointer true
+    bspc config pointer_follows_focus false
+    bspc config pointer_follows_monitor false
+    bspc config pointer_modifier mod4
+    bspc config pointer_action1 move
+    bspc config pointer_action2 resize_side
+    bspc config pointer_action3 resize_corner
+    bspc config click_to_focus       any
+    bspc config swallow_first_click  true
+    bspc config single_monocle       false
+    bspc config borderless_singleton false
+    bspc config split_ratio          0.52
+    bspc config automatic_scheme     longest_side
+    bspc config initial_polarity     first_child
+    bspc config removal_adjustment   true
+    bspc config directional_focus_tightness low
+    bspc config honor_size_hints     tiled
+    bspc config center_pseudo_tiled  true
+    bspc config presel_feedback      true
+    bspc config pointer_motion_interval 2
+    bspc config remove_disabled_monitors  true
+    bspc config remove_unplugged_monitors true
+    bspc config merge_overlapping_monitors false
+
+    # --- правила окон -------------------------------------------------------
+    # (md.sys.elevation: диалоги в picom получают уровень 3 и скругление)
+    bspc rule -r '*' 2>/dev/null
+
+    # bspwm сам делает плавающими окна с _NET_WM_WINDOW_TYPE_{DIALOG,UTILITY,
+    # SPLASH,TOOLBAR} — отдельное правило для этого не нужно (в man bspwm
+    # критерия window_type нет). Здесь добавляем только то, чего WM не знает.
+
+    # конкретные «всплывашки»
+    for cls in Pavucontrol Nm-connection-editor Blueman-manager Arandr \
+               Lxappearance Qtconfig Gparted File-roller Xsane Zenity \
+               matplotlib Tk Lxqt-openssh-askpass Sxiv feh Nsxiv; do
+        bspc rule -a "$cls" state=floating center=on 2>/dev/null
+    done
+
+    # Picture-in-Picture — плавающий, липкий, поверх всех
+    bspc rule -a 'firefox:Toolkit'      state=floating sticky=on layer=above 2>/dev/null
+    bspc rule -a '*:Picture-in-Picture' state=floating sticky=on layer=above 2>/dev/null
+
+    # медиа — сразу в fullscreen
+    bspc rule -a mpv state=fullscreen 2>/dev/null
+    bspc rule -a vlc state=fullscreen 2>/dev/null
+
+    # раскладка по столам
+    bspc rule -a firefox      desktop='^2' follow=off 2>/dev/null
+    bspc rule -a Chromium     desktop='^2' follow=off 2>/dev/null
+    bspc rule -a '*:chromium' desktop='^2' follow=off 2>/dev/null
+    bspc rule -a Steam        desktop='^7' follow=off 2>/dev/null
+    bspc rule -a Gimp-2.10    desktop='^6' state=floating 2>/dev/null
+    bspc rule -a TelegramDesktop desktop='^4' follow=off 2>/dev/null
+    bspc rule -a '*:scratch'  state=floating sticky=on hidden=on 2>/dev/null
+
+    # служебные окна WM не manages
+    bspc rule -a polybar manage=off border=off layer=below 2>/dev/null
+    bspc rule -a rofi    border=off manage=off 2>/dev/null
+    bspc rule -a dmenu   border=off manage=off 2>/dev/null
+else
+    log "⚠ bspc не найден — поднимаю только сервисы (режим отладки)"
+fi
+
+#----------------------------------------------------------------------------
+# 4. Применяем тему к окружению (xrdb, обои, DPI) — до старта сервисов
+#----------------------------------------------------------------------------
+if [[ -x "$CFG_DIR/tools/md3-apply" ]]; then
+    "$CFG_DIR/tools/md3-apply" --quiet --stage=env 2>>"$MAIN_LOG" || log "⚠ md3-apply --stage=env вернул ошибку"
+fi
+
+#----------------------------------------------------------------------------
+# 5. Запуск сервисов в правильном порядке: picom → polybar → sxhkd
+#----------------------------------------------------------------------------
+# 5.1 Композитор. Бэкенд egl/glx задаётся в picom.conf (генерируется темой).
+if [[ "${MD3_COMPOSITOR:-1}" == "1" ]]; then
+    launch_with_retry picom 3 0.4 \
+        picom --config "$CFG_DIR/picom.conf" --log-file "$LOG_DIR/picom.log"
+fi
+
+# 5.2 Панель. Ждём, пока picom поднимется, иначе первый кадр может моргнуть.
+if [[ "${MD3_BAR:-1}" == "1" ]] && have polybar; then
+    sleep 0.3
+    launch polybar polybar -c "$CFG_DIR/polybar/config.ini" -r md3
+fi
+
+# 5.3 Хоткеи — последними: к моменту их готовности всё остальное уже работает.
+if [[ "${MD3_SXHKD:-1}" == "1" ]]; then
+    # -s <socket> нужен, чтобы sxhkd перечитывал конфиг по SIGUSR1 (см. md3-reload sxhkd)
+    launch sxhkd sxhkd -c "$CFG_DIR/sxhkd/sxhkdrc" -s "$STATE_DIR/sxhkd.sock"
+fi
+
+# 5.4 Прочее (уведомления, обои, polkit) — опционально и не блокирующе
+if [[ "${MD3_AUTOSTART:-1}" == "1" ]] && [[ -x "$CFG_DIR/bin/autostart" ]]; then
+    "$CFG_DIR/bin/autostart" >>"$LOG_DIR/autostart.log" 2>&1 &
+fi
+
+log "сессия готова: ${#CHILD_NAMES[@]} сервис(ов)"
+
+#----------------------------------------------------------------------------
+# 6. Ждём сигналов; heartbeat периодически будит нас для супервизии сервисов
+#----------------------------------------------------------------------------
+trap 'supervise' USR2
+heartbeat $$ &
+HEARTBEAT_PID=$!
+
+# первичная проверка — вдруг что-то отвалилось ещё на старте
+supervise
+
+while [[ "$RUNNING" -eq 1 ]]; do
+    # `wait -n` возвращает управление при завершении любого джоба ИЛИ при
+    # получении сигнала (trap) — именно то, что нужно для обработки сигналов.
+    wait -n 2>/dev/null || wait 2>/dev/null || sleep 1
+    [[ "$RUNNING" -eq 1 ]] || break
+done
+
+# глушим heartbeat, чтобы не будил уже остановленный скрипт
+if [[ -n "${HEARTBEAT_PID:-}" ]]; then
+    kill "$HEARTBEAT_PID" 2>/dev/null
+    wait "$HEARTBEAT_PID" 2>/dev/null
+fi
+
+log "bspwmrc завершил работу"
+exit 0

@@ -1,0 +1,92 @@
+!=============================================================================
+!  Xresources.md3 — Material Design 3 роли как X-ресурсы
+!-----------------------------------------------------------------------------
+!  СГЕНЕРИРОВАНО АВТОМАТИЧЕСКИ из tools/templates/Xresources.template
+!  Применяется командой:  xrdb -merge ~/.config/bspwm-material3/generated/Xresources.md3
+!  (tools/md3-apply делает это сам)
+!
+!  source color : #6750A4
+!  scheme       : tonal-spot / standard / dark
+!=============================================================================
+
+!--- md.sys.color.* ---------------------------------------------------------
+#define MD3_primary                #cfbdfe
+#define MD3_on_primary             #36275d
+#define MD3_primary_container      #4d3d75
+#define MD3_on_primary_container   #e9ddff
+#define MD3_secondary              #cbc2db
+#define MD3_secondary_container    #4a4458
+#define MD3_on_secondary_container #e8def8
+#define MD3_tertiary               #efb8c8
+#define MD3_tertiary_container     #633b48
+#define MD3_on_tertiary_container  #ffd9e3
+#define MD3_error                  #ffb4ab
+#define MD3_error_container        #93000a
+#define MD3_on_error_container     #ffdad6
+#define MD3_surface                #141218
+#define MD3_on_surface             #e6e0e9
+#define MD3_surface_variant        #49454e
+#define MD3_on_surface_variant     #cac4cf
+#define MD3_surface_container      #211f24
+#define MD3_surface_container_high #2b292f
+#define MD3_outline                #948f99
+#define MD3_outline_variant        #49454e
+#define MD3_inverse_surface        #e6e0e9
+#define MD3_inverse_on_surface     #322f35
+
+MD3.primary:                MD3_primary
+MD3.onPrimary:              MD3_on_primary
+MD3.primaryContainer:       MD3_primary_container
+MD3.surface:                MD3_surface
+MD3.onSurface:              MD3_on_surface
+MD3.surfaceContainer:       MD3_surface_container
+MD3.surfaceContainerHigh:   MD3_surface_container_high
+MD3.outline:                MD3_outline
+MD3.outlineVariant:         MD3_outline_variant
+MD3.error:                  MD3_error
+
+!--- dmenu / bemenu ---------------------------------------------------------
+dmenu.background:            MD3_surface_container
+dmenu.foreground:            MD3_on_surface
+dmenu.selBackground:         MD3_primary_container
+dmenu.selForeground:         MD3_on_primary_container
+
+bemenu.colors.background:    MD3_surface_container
+bemenu.colors.text:          MD3_on_surface
+bemenu.colors.selected:      MD3_primary_container
+bemenu.colors.selectedText:  MD3_on_primary_container
+
+!--- xterm ------------------------------------------------------------------
+XTerm*background:            MD3_surface
+XTerm*foreground:            MD3_on_surface
+XTerm*cursorColor:           MD3_primary
+XTerm*highlightColor:        MD3_secondary_container
+
+!--- st (suckless terminal) -------------------------------------------------
+st.background:               MD3_surface
+st.foreground:               MD3_on_surface
+st.cursorColor:              MD3_primary
+
+!--- 16-цветовая палитра терминала из тональных палитр md.ref.palette.* -----
+! Тона подобраны так, чтобы ANSI-цвета оставались в той же HCT-гамме,
+! что и WM (primary/secondary/tertiary/error/neutral).
+*background:                 MD3_surface
+*foreground:                 MD3_on_surface
+*cursorColor:                MD3_primary
+
+*color0:                     #000000
+*color1:                     #de3730
+*color2:                     #7e5260
+*color3:                     #7b748a
+*color4:                     #9a83db
+*color5:                     #b58392
+*color6:                     #958da4
+*color7:                     #e6e1e6
+*color8:                     #48464a
+*color9:                     #ffb4ab
+*color10:                    #efb8c8
+*color11:                    #cbc2db
+*color12:                    #cfbcff
+*color13:                    #efb8c8
+*color14:                    #e8def8
+*color15:                    #ffffff

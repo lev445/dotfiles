@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  md3-media — громкость, яркость, плеер, скриншоты (для хоткеев sxhkd)
+#-----------------------------------------------------------------------------
+#  Вызов:
+#    md3-media volume up|down|toggle|set N
+#    md3-media brightness up|down|set N
+#    md3-media play|next|prev|stop
+#    md3-media shot full|window|area
+#    md3-media notify "текст"
+#
+#  Всё детектится на лету: PipeWire/WirePlumber → PulseAudio → ALSA,
+#  brightnessctl → light → xbacklight, playerctl/mpc, flameshot/scrot/maim.
+#=============================================================================
+set -uo pipefail
+have() { command -v "$1" >/dev/null 2>&1; }
+
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+# CFG_DIR: явный BSPWM_MD3_DIR > каталог, где лежит этот скрипт (../ от bin/) >
+# стандартный ~/.config/bspwm-material3. Автодетект позволяет запускать bin/*
+# прямо из репозитория до установки.
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_repo="$(cd "$(dirname "$(dirname "$_self")")" 2>/dev/null && pwd)"
+if [[ -n "${BSPWM_MD3_DIR:-}" ]]; then
+    CFG_DIR="$BSPWM_MD3_DIR"
+elif [[ -d "$_repo/tools" && -f "$_repo/bspwmrc" ]]; then
+    CFG_DIR="$_repo"
+else
+    CFG_DIR="$XDG_CONFIG_HOME/bspwm-material3"
+fi
+SHOT_DIR="${XDG_SCREENSHOT_DIR:-$HOME/Pictures/screenshots}"
+mkdir -p "$SHOT_DIR"
+
+if [[ -z "${MD3_PRIMARY:-}" && -r "$CFG_DIR/generated/theme.conf" ]]; then
+    # shellcheck source=/dev/null disable=SC1091
+    source "$CFG_DIR/generated/theme.conf"
+fi
+
+# Уведомление в цветах MD3 (dunst/mako/notify-send)
+notify() {
+    local title="$1" body="${2:-}" urgency="${3:-normal}"
+    have notify-send || return 0
+    if have dunstctl; then
+        notify-send -u "$urgency" -a "Material3" -t 1500 "$title" "$body"
+    else
+        notify-send -u "$urgency" -t 1500 "$title" "$body"
+    fi
+}
+
+# Полоса прогресса для уведомления (используем символы, а не графику)
+bar() {
+    local pct="$1" width=10 filled
+    pct=${pct%.*}
+    filled=$(( pct * width / 100 ))
+    (( filled > width )) && filled=$width
+    (( filled < 0 )) && filled=0
+    local out=""
+    for ((i=0;i<width;i++)); do
+        if (( i < filled )); then out+="━"; else out+="┅"; fi
+    done
+    printf '%s' "$out"
+}
+
+#-----------------------------------------------------------------------------
+# Громкость
+#-----------------------------------------------------------------------------
+vol_get() {
+    if have wpctl; then
+        wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null \
+            | awk '{for(i=1;i<=NF;i++) if($i ~ /Volume:/){v=$(i+1); gsub(/[^0-9.]/,"",v); printf "%d", v*100}}'
+    elif have pactl; then
+        pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | grep -o '[0-9]\+%' | head -1 | tr -d '%'
+    elif have amixer; then
+        amixer sget Master 2>/dev/null | grep -o '[0-9]\+%' | head -1 | tr -d '%'
+    fi
+}
+vol_set() {
+    local v="$1"
+    (( v < 0 )) && v=0; (( v > 150 )) && v=150
+    if have wpctl; then wpctl set-volume -l 150 @DEFAULT_AUDIO_SINK@ "$v%" >/dev/null 2>&1
+    elif have pactl; then pactl set-sink-volume @DEFAULT_SINK@ "$v%" >/dev/null 2>&1
+    elif have amixer; then amixer -q sset Master "$v%" >/dev/null 2>&1
+    else notify "Громкость" "wpctl/pactl/amixer не найдены" critical; return 1; fi
+    notify "󰕾 Громкость ${v} %" "$(bar "$v")"
+}
+vol_muted() {
+    if have wpctl; then wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | grep -q MUTED
+    elif have pactl; then pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -qi 'yes'
+    elif have amixer; then amixer sget Master 2>/dev/null | grep -q '\[off\]'
+    fi
+}
+
+volume() {
+    local action="${1:-up}" cur
+    cur="$(vol_get)"; [[ -z "$cur" ]] && cur=50
+    case "$action" in
+        up)     vol_set $(( cur + 5 )) ;;
+        down)   vol_set $(( cur - 5 )) ;;
+        set)    vol_set "${2:-50}" ;;
+        toggle)
+            if have wpctl; then wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle >/dev/null 2>&1
+            elif have pactl; then pactl set-sink-mute @DEFAULT_SINK@ toggle >/dev/null 2>&1
+            elif have amixer; then amixer -q sset Master toggle >/dev/null 2>&1; fi
+            if vol_muted; then notify "󰝟 Звук выключен" "$(bar 0)"
+            else notify "󰕾 Звук включён" "$(bar "$cur")"; fi ;;
+        *) echo "volume up|down|toggle|set N" >&2; return 2 ;;
+    esac
+}
+
+#-----------------------------------------------------------------------------
+# Яркость
+#-----------------------------------------------------------------------------
+bright_get() {
+    if have brightnessctl; then brightnessctl get 2>/dev/null
+    elif have light; then light -G 2>/dev/null | cut -d. -f1
+    elif have xbacklight; then xbacklight -get 2>/dev/null | cut -d. -f1
+    fi
+}
+bright_max() {
+    if have brightnessctl; then brightnessctl max 2>/dev/null
+    elif [[ -r /sys/class/backlight/intel_backlight/max_brightness ]]; then
+        cat /sys/class/backlight/intel_backlight/max_brightness
+    fi
+}
+brightness() {
+    local action="${1:-up}"
+    if have brightnessctl; then
+        case "$action" in
+            up)   brightnessctl set +5% >/dev/null 2>&1 ;;
+            down) brightnessctl set 5%- >/dev/null 2>&1 ;;
+            set)  brightnessctl set "${2:-50}%" >/dev/null 2>&1 ;;
+        esac
+    elif have light; then
+        case "$action" in
+            up) light -A 5 ;; down) light -U 5 ;; set) light -S "${2:-50}" ;;
+        esac
+    elif have xbacklight; then
+        case "$action" in
+            up) xbacklight -inc 5 ;; down) xbacklight -dec 5 ;; set) xbacklight -set "${2:-50}" ;;
+        esac
+    else
+        notify "Яркость" "brightnessctl / light / xbacklight не найдены" critical; return 1
+    fi
+    local pct
+    if have brightnessctl; then pct="$(brightnessctl get 2>/dev/null)"
+    else pct="$(bright_get)"; fi
+    [[ -z "$pct" ]] && pct="?"
+    notify "󰃠 Яркость ${pct} %" "$(bar "${pct:-0}")"
+}
+
+#-----------------------------------------------------------------------------
+# Плеер
+#-----------------------------------------------------------------------------
+player() {
+    local action="${1:-play}"
+    if have playerctl; then
+        case "$action" in
+            play) playerctl play-pause ;;
+            next) playerctl next ;;
+            prev) playerctl previous ;;
+            stop) playerctl stop ;;
+        esac
+    elif have mpc; then
+        case "$action" in
+            play) mpc toggle ;; next) mpc next ;; prev) mpc prev ;; stop) mpc stop ;;
+        esac
+    else
+        notify "Плеер" "playerctl / mpc не найдены"; return 1
+    fi
+}
+
+#-----------------------------------------------------------------------------
+# Скриншоты
+#-----------------------------------------------------------------------------
+shot() {
+    local mode="${1:-full}"
+    local out="$SHOT_DIR/md3-$(date +%Y%m%d-%H%M%S).png"
+    if have flameshot; then
+        case "$mode" in
+            full)   flameshot full -p "$SHOT_DIR" ;;
+            area)   flameshot gui ;;
+            window) flameshot full -p "$SHOT_DIR" ;;
+        esac
+        notify "󰄀 Скриншот" "flameshot → $SHOT_DIR"
+    elif have maim; then
+        case "$mode" in
+            full)   maim "$out" ;;
+            window) maim -i "$(xdotool getactivewindow 2>/dev/null || echo 0)" "$out" ;;
+            area)   maim -s "$out" ;;
+        esac
+        notify "󰄀 Скриншот" "$out"
+    elif have scrot; then
+        case "$mode" in
+            full)   scrot "$out" ;;
+            window) scrot -u "$out" ;;
+            area)   scrot -s "$out" ;;
+        esac
+        notify "󰄀 Скриншот" "$out"
+    elif have grim && have slurp; then           # Wayland
+        case "$mode" in
+            area) grim -g "$(slurp)" "$out" ;;
+            *)    grim "$out" ;;
+        esac
+        notify "󰄀 Скриншот" "$out"
+    else
+        notify "Скриншоты" "flameshot / maim / scrot / grim не найдены" critical; return 1
+    fi
+    # скопировать в буфер обмена, если есть чем
+    if have xclip && [[ -f "$out" ]]; then xclip -selection clipboard -t image/png -i "$out" 2>/dev/null; fi
+    if have wl-copy && [[ -f "$out" ]]; then wl-copy --type image/png < "$out" 2>/dev/null; fi
+}
+
+case "${1:-help}" in
+    volume)     shift; volume "$@" ;;
+    brightness) shift; brightness "$@" ;;
+    play|next|prev|stop) player "$1" ;;
+    shot)       shift; shot "$@" ;;
+    notify)     shift; notify "${1:-Material 3}" "${2:-}" "${3:-normal}" ;;
+    *) sed -n '2,22p' "$0" ;;
+esac

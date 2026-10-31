@@ -1,0 +1,244 @@
+#=============================================================================
+#  sxhkdrc — хоткеи для bspwm в стиле Material Design 3
+#-----------------------------------------------------------------------------
+#  Запускается из bspwmrc ПОСЛЕ picom и polybar:
+#      sxhkd -c ~/.config/bspwm-material3/sxhkd/sxhkdrc
+#
+#  Модификаторы:
+#    super        — основное действие
+#    super+shift  — «деструктивное»/перемещение
+#    super+ctrl   — размер
+#    super+alt    — преселект (предварительное разделение)
+#
+#  Все темы/меню вызываются через bin/md3-* — они читают MD3_* токены,
+#  которые экспортирует bspwmrc (см. tools/md3_theme.py).
+#=============================================================================
+
+#-----------------------------------------------------------------------------
+# Приложения
+#-----------------------------------------------------------------------------
+
+# Терминал (MD3-палитра приходит из Xresources → *color0..15)
+super + Return
+	"${TERMINAL:-alacritty}"
+
+# Скретч-терминал (плавающий, липкий — правило в bspwmrc)
+super + grave
+	"${TERMINAL:-alacritty}" --class scratch -t scratch
+
+# Лаунчер приложений (rofi с MD3-темой rofi/md3.rasi)
+super + d
+	~/.config/bspwm-material3/bin/md3-launcher
+
+# GUI-редактор темы Material Design 3 (чекбоксы + превью)
+super + shift + t
+	python3 ~/.config/bspwm-material3/tools/md3-theme-gui.py
+
+# MD3-меню: тема / сессия / сервисы (rofi или dmenu/zenity-fallback)
+super + x
+	~/.config/bspwm-material3/bin/md3-menu
+
+super + shift + x
+	~/.config/bspwm-material3/bin/md3-menu power
+
+# Файловый менеджер / браузер / редактор
+super + e
+	${FILE_MANAGER:-thunar}
+super + w
+	${BROWSER:-firefox}
+super + c
+	${EDITOR_GUI:-code}
+
+#-----------------------------------------------------------------------------
+# Окна: фокус, перемещение, размер
+#-----------------------------------------------------------------------------
+
+# фокус по направлению (vim-раскладка) или циклически
+super + {h,j,k,l}
+	bspc node -f {west,south,north,east}
+super + {Left,Down,Up,Right}
+	bspc node -f {west,south,north,east}
+alt + Tab
+	bspc node -f next.local
+super + Tab
+	bspc node -f last.local
+
+# переместить окно
+super + shift + {h,j,k,l}
+	bspc node -s {west,south,north,east} --follow
+super + shift + {Left,Down,Up,Right}
+	bspc node -s {west,south,north,east} --follow
+
+# поменять окна местами / отправить на другой стол
+super + ctrl + {h,j,k,l}
+	bspc node -s {west,south,north,east}
+super + shift + {1-9}
+	bspc node -d '^{1-9}' --follow
+
+# изменение размера (прибавка/вычитание 40 px — md.sys.spacing * 10)
+super + ctrl + {Left,Down,Up,Right}
+	bspc node -z {left -40 0,bottom 0 40,top 0 -40,right 40 0}
+super + ctrl + shift + {Left,Down,Up,Right}
+	bspc node -z {right -40 0,top 0 40,bottom 0 -40,left 40 0}
+
+# соотношение сплита
+super + ctrl + {minus,equal}
+	bspc node @/ -r {-,+}0.05
+
+# сдвиг плавающего окна мышью/клавишами
+super + alt + {Left,Down,Up,Right}
+	bspc node -v {-40 0,0 40,0 -40,40 0}
+
+#-----------------------------------------------------------------------------
+# Преселект (manual insertion mode) — md.sys.color.tertiary в bspwmrc
+#-----------------------------------------------------------------------------
+super + alt + {h,j,k,l}
+	bspc node -p {west,south,north,east}
+super + alt + {1-9}
+	bspc node -o 0.{1-9}
+super + alt + space
+	bspc node -p cancel
+super + alt + b
+	bspc node @/ -B          # выровнять пропорции сплитов
+super + alt + e
+	bspc node @/ -E          # сбросить пропорции
+
+#-----------------------------------------------------------------------------
+# Состояния и флаги окна
+#-----------------------------------------------------------------------------
+
+# tiled → pseudo_tiled → floating → fullscreen
+super + t
+	bspc node -t tiled
+super + y
+	bspc node -t pseudo_tiled
+super + shift + space
+	bspc node -t ~floating
+super + f
+	bspc node -t ~fullscreen
+
+# флаги (md.sys.state: sticky/locked/private/marked)
+super + g
+	bspc node -g sticky=on
+super + shift + g
+	bspc node -g sticky=off
+super + i
+	bspc node -g private=on
+super + shift + i
+	bspc node -g private=off
+super + l
+	bspc node -g locked=on
+super + shift + l
+	bspc node -g locked=off
+super + m
+	bspc node -g marked=on
+super + shift + m
+	bspc node -g marked=off
+
+# закрыть / убить
+super + q
+	bspc node -c
+super + shift + q
+	bspc node -k
+
+#-----------------------------------------------------------------------------
+# Столы и мониторы
+#-----------------------------------------------------------------------------
+super + {1-9,0}
+	bspc desktop -f '^{1-9,10}'
+super + bracketleft
+	bspc desktop -f prev.local
+super + bracketright
+	bspc desktop -f next.local
+super + ctrl + bracketleft
+	bspc desktop -m next --follow
+super + ctrl + bracketright
+	bspc monitor -f next
+super + o
+	bspc node -m next --follow
+super + shift + o
+	bspc desktop -m next
+
+# layout стола (tiled ↔ monocle)
+super + shift + y
+	bspc desktop -l next
+
+#-----------------------------------------------------------------------------
+# Геометрия (md.sys.spacing: gap/padding) — меняем «на лету»
+#-----------------------------------------------------------------------------
+super + {plus,minus}
+	bspc config window_gap $(( $(bspc config window_gap) {+,-} 4 ))
+super + shift + r
+	bspc config window_gap 12; bspc config border_width 2   # md.sys.shape.medium + border 2dp
+super + ctrl + r
+	bspc config window_gap 0;  bspc config border_width 0   # «плотный» режим
+
+#-----------------------------------------------------------------------------
+# Тема и сервисы
+#-----------------------------------------------------------------------------
+
+# перечитать тему без рестарта сервисов (USR1 → bspwmrc → md3-apply)
+super + F5
+	~/.config/bspwm-material3/bin/md3-reload theme
+
+# полный перезапуск конфига (SIGHUP: корректно остановит picom/polybar/sxhkd)
+super + shift + F5
+	bspc wm -r
+
+# перезапустить только композитор / панель
+super + shift + p
+	pkill -x picom;   sleep 0.4; picom --config ~/.config/bspwm-material3/picom.conf --log-file ~/.local/state/bspwm-md3/log/picom.log &
+super + shift + b
+	polybar-msg cmd restart 2>/dev/null || { pkill -x polybar; sleep 0.4; polybar -c ~/.config/bspwm-material3/polybar/config.ini -r md3 & }
+
+# светлая/тёмная схема одним нажатием
+super + shift + n
+	python3 ~/.config/bspwm-material3/tools/md3_theme.py set dark=false && ~/.config/bspwm-material3/bin/md3-reload theme
+super + shift + alt + n
+	python3 ~/.config/bspwm-material3/tools/md3_theme.py set dark=true && ~/.config/bspwm-material3/bin/md3-reload theme
+
+#-----------------------------------------------------------------------------
+# Сессия
+#-----------------------------------------------------------------------------
+super + shift + e
+	~/.config/bspwm-material3/bin/md3-menu power
+super + shift + Escape
+	~/.config/bspwm-material3/bin/md3-menu power
+super + Escape
+	bspc quit
+
+#-----------------------------------------------------------------------------
+# Мультимедиа / яркость / скриншоты
+#-----------------------------------------------------------------------------
+XF86AudioRaiseVolume
+	~/.config/bspwm-material3/bin/md3-media volume up
+XF86AudioLowerVolume
+	~/.config/bspwm-material3/bin/md3-media volume down
+XF86AudioMute
+	~/.config/bspwm-material3/bin/md3-media volume toggle
+XF86AudioPlay
+	~/.config/bspwm-material3/bin/md3-media play
+XF86AudioNext
+	~/.config/bspwm-material3/bin/md3-media next
+XF86AudioPrev
+	~/.config/bspwm-material3/bin/md3-media prev
+XF86MonBrightnessUp
+	~/.config/bspwm-material3/bin/md3-media brightness up
+XF86MonBrightnessDown
+	~/.config/bspwm-material3/bin/md3-media brightness down
+
+# скриншоты
+Print
+	~/.config/bspwm-material3/bin/md3-media shot full
+shift + Print
+	~/.config/bspwm-material3/bin/md3-media shot window
+super + Print
+	~/.config/bspwm-material3/bin/md3-media shot area
+
+#-----------------------------------------------------------------------------
+# Мышь: перетаскивание/ресайз без модификатора (дублирует pointer_modifier)
+#-----------------------------------------------------------------------------
+super + button{1-3}
+	bspc pointer -g %{move,resize_side,resize_corner}
+super + @button{1-3}
+	bspc pointer -u

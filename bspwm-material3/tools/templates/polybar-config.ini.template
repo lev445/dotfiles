@@ -1,0 +1,276 @@
+;;============================================================================
+;;  polybar config — Material Design 3 bar for bspwm
+;;----------------------------------------------------------------------------
+;;  СГЕНЕРИРОВАНО АВТОМАТИЧЕСКИ из tools/templates/polybar-config.ini.template
+;;  Цвета: polybar/colors.ini (роли md.sys.color.*)
+;;  Метрики: md.sys.shape / md.sys.spacing / md.sys.typescale
+;;
+;;  Запуск:  polybar md3   (или tools/md3-apply)
+;;============================================================================
+
+include-file = ~/.config/bspwm-material3/polybar/colors.ini
+
+[global/wm]
+margin-bottom = 0
+margin-top    = 0
+
+;;---------------------------------------------------------------------------
+;; BAR
+;;---------------------------------------------------------------------------
+[bar/md3]
+monitor  = ${env:MONITOR:}
+width    = 100%
+height   = 38                        ;; md.sys.spacing * 9 + padding
+radius   = 0                         ;; панель во всю ширину — без скруглений
+dpi      = ${xrdb:Xft.dpi:96}
+
+fixed-center = true
+bottom       = false
+override-redirect = true
+wm-restack   = bspwm
+
+;; elevation 2: surface + overlay(surfaceTint, 8%)
+background = ${colors.bar-bg}
+foreground = ${colors.bar-fg}
+
+;; отступы контента (md.sys.spacing: 4 / 8 / 12 / 16)
+line-size  = 3
+padding    = 2
+module-margin-left  = 0
+module-margin-right = 0
+separator =
+
+;; md.sys.typescale: label / body-medium
+font-0 = "JetBrainsMono Nerd Font:size=10;3"
+font-1 = "Symbols Nerd Font:size=12;3"
+font-2 = "DejaVu Sans:size=10;3"
+
+;; Порядок модулей
+modules-left   = bspwm sep xwindow
+modules-center =
+modules-right  = cpu sep mem sep volume sep battery sep network sep date sep powermenu
+
+;; Трей (управляется чекбоксом «System tray»)
+#?if TRAY
+tray-position = right
+tray-detached = false
+tray-maxsize  = 16
+tray-padding  = 6
+tray-background = ${colors.tray-bg}
+tray-foreground = ${colors.on-surface-variant}
+tray-offset-x = 0
+tray-offset-y = 0
+tray-scale = 1.0
+#?endif
+#?if NO_TRAY
+tray-position = none
+#?endif
+
+;; Прозрачность/курсор
+enable-ipc = true
+click-left =
+scroll-up   = bspc desktop -f prev.local
+scroll-down = bspc desktop -f next.local
+
+cursor-click  = pointer
+cursor-scroll = ns-resize
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: рабочие столы bspwm  (md.comp.navigation-bar / primary indicator)
+;;---------------------------------------------------------------------------
+[module/bspwm]
+type = internal/bspwm
+
+;; Показывать только столы текущего монитора
+pin-workspaces = true
+
+label-focused            = %name%
+label-focused-padding    = 3
+label-focused-background = ${colors.ws-focused}
+label-focused-foreground = ${colors.ws-focused-fg}
+label-focused-underline  = ${colors.primary}
+label-focused-overline   = ${colors.primary}
+label-focused-font       = 2
+
+label-occupied            = %name%
+label-occupied-padding    = 3
+label-occupied-background = ${colors.ws-occupied}
+label-occupied-foreground = ${colors.ws-occupied-fg}
+
+label-urgent            = %name%
+label-urgent-padding    = 3
+label-urgent-background = ${colors.ws-urgent}
+label-urgent-foreground = ${colors.ws-urgent-fg}
+label-urgent-underline  = ${colors.error}
+
+label-empty            = %name%
+label-empty-padding    = 3
+label-empty-background = ${colors.ws-empty}
+label-empty-foreground = ${colors.ws-empty-fg}
+
+label-monocle  = "󰊓"
+label-tiled    = "󱒼"
+label-floating = "󱂬"
+label-pseudo_tiled = "󰉧"
+label-fullscreen   = "󰊓"
+label-locked   = "󰌾"
+label-marked   = "󰃀"
+label-private  = "󰗹"
+
+format = <label-state> <label-mode>
+format-background = ${colors.bar-bg}
+format-foreground = ${colors.on-surface}
+format-padding = 1
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: заголовок окна
+;;---------------------------------------------------------------------------
+[module/xwindow]
+type = internal/xwindow
+format = <label>
+format-prefix = "󱂬 "
+format-prefix-foreground = ${colors.tertiary}
+format-foreground = ${colors.on-surface-variant}
+format-padding = 2
+label = %title:0:48:…%
+label-maxlen = 48
+label-empty = bspwm · Material Design 3
+label-empty-foreground = ${colors.outline}
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: разделитель
+;;---------------------------------------------------------------------------
+[module/sep]
+type = custom/text
+content = "|"
+content-foreground = ${colors.separator}
+content-padding = 1
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: CPU
+;;---------------------------------------------------------------------------
+[module/cpu]
+type = internal/cpu
+interval = 2
+format = <label>
+format-prefix = "󰻠 "
+format-prefix-foreground = ${colors.primary}
+format-padding = 2
+label = %percentage:2%%
+label-foreground = ${colors.on-surface-variant}
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: память
+;;---------------------------------------------------------------------------
+[module/mem]
+type = internal/memory
+interval = 3
+format = <label>
+format-prefix = "󰍛 "
+format-prefix-foreground = ${colors.secondary}
+format-padding = 2
+label = %percentage_used%%
+label-foreground = ${colors.on-surface-variant}
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: громкость (ALSA / PulseAudio / PipeWire)
+;;---------------------------------------------------------------------------
+[module/volume]
+type = internal/alsa
+;type = internal/pulseaudio    ;; <- раскомментируйте для PulseAudio/PipeWire
+interval = 2
+format-volume = <ramp-volume> <bar-volume>
+format-volume-padding = 2
+format-muted = <label-muted>
+format-muted-prefix = "󰝟 "
+format-muted-prefix-foreground = ${colors.outline}
+format-muted-padding = 2
+label-muted = muted
+label-muted-foreground = ${colors.outline}
+
+ramp-volume-0 = "󰕿"
+ramp-volume-1 = "󰖀"
+ramp-volume-2 = "󰕾"
+ramp-volume-foreground = ${colors.tertiary}
+
+bar-volume-width = 8
+bar-volume-indicator =
+bar-volume-fill = ━
+bar-volume-fill-foreground = ${colors.bar-fill}
+bar-volume-empty = ━
+bar-volume-empty-foreground = ${colors.bar-empty}
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: батарея
+;;---------------------------------------------------------------------------
+[module/battery]
+type = internal/battery
+full-at = 98
+battery = ${env:BATTERY:BAT0}
+adapter = ${env:ADAPTER:AC0}
+poll-interval = 10
+
+format-charging = <label-charging>
+format-charging-prefix = "󰂄 "
+format-charging-prefix-foreground = ${colors.tertiary}
+format-charging-padding = 2
+format-discharging = <label-discharging>
+format-discharging-prefix = "󱊡 "
+format-discharging-prefix-foreground = ${colors.secondary}
+format-discharging-padding = 2
+format-full = <label-full>
+format-full-prefix = "󰁹 "
+format-full-prefix-foreground = ${colors.primary}
+format-full-padding = 2
+
+label-charging    = %percentage%%
+label-discharging = %percentage%%
+label-full        = %percentage%%
+label-charging-foreground    = ${colors.on-surface-variant}
+label-discharging-foreground = ${colors.on-surface-variant}
+label-full-foreground        = ${colors.on-surface-variant}
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: сеть
+;;---------------------------------------------------------------------------
+[module/network]
+type = internal/network
+interface = ${env:NET_IF:}
+interval = 3
+format-connected = <label-connected>
+format-connected-prefix = "󰤨 "
+format-connected-prefix-foreground = ${colors.primary}
+format-connected-padding = 2
+format-disconnected = <label-disconnected>
+format-disconnected-prefix = "󰤭 "
+format-disconnected-prefix-foreground = ${colors.error}
+format-disconnected-padding = 2
+label-connected = %essid%
+label-connected-foreground = ${colors.on-surface-variant}
+label-disconnected = offline
+label-disconnected-foreground = ${colors.outline}
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: часы (md.sys.typescale.label-large, primary container pill)
+;;---------------------------------------------------------------------------
+[module/date]
+type = internal/date
+interval = 5
+time     = %H:%M
+time-alt = %a, %d %b
+format = <label>
+format-background = ${colors.clock-bg}
+format-foreground = ${colors.clock-fg}
+format-padding = 3
+label = %time%
+
+;;---------------------------------------------------------------------------
+;; МОДУЛЬ: меню (вызывает bin/md3-menu)
+;;---------------------------------------------------------------------------
+[module/powermenu]
+type = custom/text
+content = "󰐥"
+content-background = ${colors.badge-bg}
+content-foreground = ${colors.badge-fg}
+content-padding = 3
+click-left = ~/.config/bspwm-material3/bin/md3-menu power

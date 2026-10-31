@@ -1,0 +1,18 @@
+# зависимости / кэш
+node_modules/
+.mcu_nm/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# артефакты песочницы и локальные копии
+*.tar.gz
+screenshot.png.bak
+wallpapers/*.bak
+
+# бэкапы установщика и пользовательское состояние поверх дефолтов
+*.bak-*
+generated/theme-state.local.json
+
+# логи/pid (если кто-то запустит прямо из репозитория)
+.state/

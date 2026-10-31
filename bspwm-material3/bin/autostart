@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  autostart — системные агенты сессии, которых нет в bspwmrc
+#
+#  bspwmrc отвечает за compositor/bar/hotkeys/тему. Здесь — то, что должно
+#  жить один раз на сессию и не должно ронять WM, если пакета нет:
+#    · polkit-агент          (диалоги «админских» прав в GUI)
+#    · демон уведомлений     (dunst / mako / swaync)
+#    · ключи GNOME/KDE       (опционально, для браузеров и т.п.)
+#    · NumLock, курсор, обои через md3-apply --stage=env
+#    · автоблокировка экрана (xidlehook / xautolock, опционально)
+#
+#  Идемпотентность: каждый демон стартует один раз (pidfile в
+#  $XDG_STATE_HOME/bspwm-md3/pid), повторный запуск autostart безопасен —
+#  можно вызывать из .xinitrc, dex, или вручную после логина.
+#=============================================================================
+set -u
+
+# CFG_DIR: явный BSPWM_MD3_DIR > каталог, где лежит этот скрипт (../ от bin/) >
+# стандартный ~/.config/bspwm-material3. Автодетект позволяет запускать bin/*
+# прямо из репозитория до установки.
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_repo="$(cd "$(dirname "$(dirname "$_self")")" 2>/dev/null && pwd)"
+if [[ -n "${BSPWM_MD3_DIR:-}" ]]; then
+    CFG_DIR="$BSPWM_MD3_DIR"
+elif [[ -d "$_repo/tools" && -f "$_repo/bspwmrc" ]]; then
+    CFG_DIR="$_repo"
+else
+    CFG_DIR="${BSPWM_MD3_CFG:-$HOME/.config/bspwm-material3}"
+fi
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/bspwm-md3"
+PID_DIR="$STATE_DIR/pid"
+LOG_DIR="$STATE_DIR/log"
+mkdir -p "$PID_DIR" "$LOG_DIR" 2>/dev/null
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+running() {  # running <имя-процесса>: ищем по /proc (без зависимости от procps)
+    local d name
+    for d in /proc/[0-9]*; do
+        [[ -r "$d/comm" ]] || continue
+        name="$(cat "$d/comm" 2>/dev/null)" || continue
+        [[ "$name" == "$1" ]] && return 0
+    done
+    return 1
+}
+
+already() {  # already <name> → pidfile живой?
+    local f="$PID_DIR/$1.pid" pid
+    [[ -r "$f" ]] || return 1
+    pid="$(cat "$f" 2>/dev/null)" || return 1
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+launch() {  # launch <name> <cmd...>
+    local name="$1"; shift
+    if already "$name"; then
+        echo "[autostart] $name: уже работает (pid $(cat "$PID_DIR/$name.pid"))"
+        return 0
+    fi
+    "$@" >>"$LOG_DIR/autostart.log" 2>&1 &
+    echo $! > "$PID_DIR/$name.pid"
+    echo "[autostart] $name: запущен ($*)"
+}
+
+#------------------------------------------------------------------------------
+# 1. Polkit-агент: первый найденный
+#------------------------------------------------------------------------------
+if   have lxpolkit;              then launch polkit lxpolkit
+elif have polkit-gnome-agent;    then launch polkit polkit-gnome-agent
+elif have /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1; then
+    launch polkit /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+elif have /usr/libexec/polkit-gnome-authentication-agent-1; then
+    launch polkit /usr/libexec/polkit-gnome-authentication-agent-1
+elif have polkit-kde-authentication-agent-1; then
+    launch polkit polkit-kde-authentication-agent-1
+else
+    echo "[autostart] polkit-агент не найден — пропускаю"
+fi
+
+#------------------------------------------------------------------------------
+# 2. Демон уведомлений (только если кто-то уже не занял D-Bus-имя)
+#------------------------------------------------------------------------------
+if running dunst || running mako || running swaync; then
+    echo "[autostart] уведомлитель уже запущен"
+elif have dunst;  then launch notify dunst
+elif have mako;   then launch notify mako
+elif have swaync; then launch notify swaync
+else
+    echo "[autostart] dunst/mako/swaync не найдены — уведомления через notify-send не дойдут"
+fi
+
+#------------------------------------------------------------------------------
+# 3. Кейринг (опционально): SSH/GPG-агент и секреты для браузеров
+#------------------------------------------------------------------------------
+if have gnome-keyring-daemon && ! already keyring; then
+    eval "$(gnome-keyring-daemon --start --components=pkcs11,secrets 2>/dev/null)" \
+        >>"$LOG_DIR/autostart.log" 2>&1 || true
+    echo "[autostart] gnome-keyring: запущен"
+fi
+
+#------------------------------------------------------------------------------
+# 4. Мелочи X-сессии: NumLock, курсор, dpi
+#------------------------------------------------------------------------------
+have numlockx && numlockx on 2>/dev/null
+have xsetroot && xsetroot -cursor_name left_ptr 2>/dev/null
+if [[ -n "${MD3_XFT_DPI:-}" ]] && have xrdb; then
+    printf 'Xft.dpi: %s\n' "$MD3_XFT_DPI" | xrdb -merge 2>/dev/null
+fi
+
+#------------------------------------------------------------------------------
+# 5. Обои + Xresources из текущей темы (env-стагия md3-apply)
+#------------------------------------------------------------------------------
+if [[ -x "$CFG_DIR/bin/md3-apply" ]]; then
+    "$CFG_DIR/bin/md3-apply" --stage=env --quiet 2>>"$LOG_DIR/autostart.log" \
+        && echo "[autostart] обои/Xresources: применены из темы"
+fi
+
+#------------------------------------------------------------------------------
+# 6. Автоблокировка экрана (опционально, если есть локер)
+#------------------------------------------------------------------------------
+LOCKER=""
+# цвет фона локера — surface текущей темы, чтобы не было чужеродного чёрного
+SURF_HEX="141218"
+if [[ -r "$CFG_DIR/generated/theme.conf" ]]; then
+    # shellcheck source=/dev/null
+    source "$CFG_DIR/generated/theme.conf" 2>/dev/null
+    SURF_HEX="${MD3_SURFACE#\#}"
+fi
+if   have betterlockscreen; then LOCKER="betterlockscreen -l"
+elif have swaylock;          then LOCKER="swaylock -f -e -c $SURF_HEX"
+elif have i3lock;            then LOCKER="i3lock -c $SURF_HEX"
+fi
+if [[ -n "$LOCKER" ]] && ! already idlelock; then
+    if have xidlehook; then
+        xidlehook --not-when-fullscreen --not-when-audio \
+                  --timer 600 "$LOCKER" >>"$LOG_DIR/autostart.log" 2>&1 &
+        echo $! > "$PID_DIR/idlelock.pid"
+        echo "[autostart] xidlehook: блокировка через 10 мин простоя"
+    elif have xautolock; then
+        xautolock -time 10 -locker "$LOCKER" >>"$LOG_DIR/autostart.log" 2>&1 &
+        echo $! > "$PID_DIR/idlelock.pid"
+        echo "[autostart] xautolock: блокировка через 10 мин простоя"
+    fi
+fi
+
+echo "[autostart] готово"

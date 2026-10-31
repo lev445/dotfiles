@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  md3-menu — меню действий в стиле Material Design 3
+#-----------------------------------------------------------------------------
+#  Вызов:  md3-menu [theme|power|services|main]
+#
+#  Бэкенды выбора (по порядку): rofi -dmenu → dmenu → zenity --list →
+#  нумерованный список в терминале. Оформление берёт MD3_* токены, которые
+#  экспортирует bspwmrc (или читает generated/theme.conf).
+#=============================================================================
+set -uo pipefail
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+# CFG_DIR: явный BSPWM_MD3_DIR > каталог, где лежит этот скрипт (../ от bin/) >
+# стандартный ~/.config/bspwm-material3. Автодетект позволяет запускать bin/*
+# прямо из репозитория до установки.
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_repo="$(cd "$(dirname "$(dirname "$_self")")" 2>/dev/null && pwd)"
+if [[ -n "${BSPWM_MD3_DIR:-}" ]]; then
+    CFG_DIR="$BSPWM_MD3_DIR"
+elif [[ -d "$_repo/tools" && -f "$_repo/bspwmrc" ]]; then
+    CFG_DIR="$_repo"
+else
+    CFG_DIR="$XDG_CONFIG_HOME/bspwm-material3"
+fi
+PY="${MD3_PYTHON:-python3}"
+THEME_PY="$CFG_DIR/tools/md3_theme.py"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+if [[ -z "${MD3_SURFACE_CONTAINER:-}" && -r "$CFG_DIR/generated/theme.conf" ]]; then
+    # shellcheck source=/dev/null disable=SC1091
+    source "$CFG_DIR/generated/theme.conf"
+fi
+: "${MD3_SURFACE_CONTAINER:=#211f24}" "${MD3_ON_SURFACE:=#e6e0e9}"
+: "${MD3_PRIMARY:=#cfbdfe}" "${MD3_ON_PRIMARY:=#36275d}"
+: "${MD3_PRIMARY_CONTAINER:=#4d3d75}" "${MD3_ON_PRIMARY_CONTAINER:=#e9ddff}"
+: "${MD3_OUTLINE_VARIANT:=#49454f}" "${MD3_CORNER_RADIUS:=12}"
+
+# pick "заголовок" <<< "строка1\nстрока2" — вернуть выбранную строку
+pick() {
+    local title="$1"
+    if have rofi; then
+        rofi -dmenu -i -p "$title" -theme-str "
+            window { background-color: ${MD3_SURFACE_CONTAINER};
+                     border: 2px; border-color: ${MD3_OUTLINE_VARIANT};
+                     border-radius: ${MD3_CORNER_RADIUS}px; width: 520px; padding: 10px; }
+            element { padding: 8px 10px; border-radius: 8px; text-color: ${MD3_ON_SURFACE}; }
+            element selected { background-color: ${MD3_PRIMARY_CONTAINER};
+                               text-color: ${MD3_ON_PRIMARY_CONTAINER}; }
+            prompt { text-color: ${MD3_PRIMARY}; }
+            entry { text-color: ${MD3_ON_SURFACE}; }
+        "
+    elif have dmenu; then
+        dmenu -i -p "$title" -fn "JetBrainsMono Nerd Font-11" \
+            -nb "$MD3_SURFACE_CONTAINER" -nf "$MD3_ON_SURFACE" \
+            -sb "$MD3_PRIMARY_CONTAINER" -sf "$MD3_ON_PRIMARY_CONTAINER"
+    elif have zenity; then
+        local items=()
+        while IFS= read -r line; do [[ -n "$line" ]] && items+=("$line"); done
+        zenity --list --title="$title" --column="Действие" "${items[@]}" \
+               --width=520 --height=420 --hide-header 2>/dev/null
+    else
+        local i=1 lines=()
+        while IFS= read -r line; do [[ -n "$line" ]] && { lines+=("$line"); printf '%2d) %s\n' "$i" "$line"; i=$((i+1)); }; done
+        printf '> '; read -r n
+        [[ "$n" =~ ^[0-9]+$ ]] && printf '%s\n' "${lines[$((n-1))]:-}"
+    fi
+}
+
+notify() {
+    have notify-send && notify-send -t 2200 -u low "Material 3" "$*"
+}
+
+reload_theme() {
+    "$PY" "$THEME_PY" generate >/dev/null 2>&1 || true
+    bash "$CFG_DIR/bin/md3-apply" --quiet --restart >/dev/null 2>&1 || true
+    notify "Тема применена: $*"
+}
+
+menu_theme() {
+    local cur
+    cur="$("$PY" "$THEME_PY" show 2>/dev/null | head -3 | tr '\n' ' ')"
+    local choice
+    choice=$(pick "Тема MD3" <<EOF
+Тёмная схема (dark)
+Светлая схема (light)
+Контраст: standard
+Контраст: medium
+Контраст: high
+Схема: tonal-spot
+Схема: content
+Схема: monochrome
+Source color…  (hex)
+Углы: 0 dp (none)
+Углы: 4 dp (extra-small)
+Углы: 8 dp (small)
+Углы: 12 dp (medium)
+Углы: 16 dp (large)
+Углы: 20 dp (large-increased)
+Углы: 28 dp (extra-large)
+Тени: включить
+Тени: выключить
+Elevation 1..5…
+Прозрачность неактивных: 1.00
+Прозрачность неактивных: 0.94
+Прозрачность неактивных: 0.88
+Blur: включить
+Blur: выключить
+Анимации окон: включить
+Анимации окон: выключить
+Открыть GUI-редактор темы
+Показать текущие токены
+EOF
+)
+    [[ -z "$choice" ]] && return 0
+    case "$choice" in
+        "Тёмная схема (dark)")       "$PY" "$THEME_PY" set dark=true  >/dev/null;  reload_theme "dark" ;;
+        "Светлая схема (light)")     "$PY" "$THEME_PY" set dark=false >/dev/null;  reload_theme "light" ;;
+        "Контраст: "*)               "$PY" "$THEME_PY" set contrast="${choice#Контраст: }" >/dev/null; reload_theme "contrast ${choice#Контраст: }" ;;
+        "Схема: "*)                  "$PY" "$THEME_PY" set scheme="${choice#Схема: }" >/dev/null; reload_theme "scheme ${choice#Схема: }" ;;
+        "Source color"*)
+            local hex
+            hex=$(pick "hex-цвет (#RRGGBB)" <<<'#6750A4
+#006A6A
+#1B6EF3
+#2E6B2F
+#8B5000
+#B3261E
+#7D5260')
+            [[ -n "$hex" ]] && { "$PY" "$THEME_PY" set seed="$hex" >/dev/null; reload_theme "seed $hex"; }
+            ;;
+        "Углы: "*)
+            local dp="${choice#Углы: }"; dp="${dp%% *}"
+            "$PY" "$THEME_PY" set corner_radius="$dp" >/dev/null; reload_theme "radius ${dp}dp" ;;
+        "Тени: включить")            "$PY" "$THEME_PY" set shadows=true  >/dev/null; reload_theme "тени вкл" ;;
+        "Тени: выключить")           "$PY" "$THEME_PY" set shadows=false >/dev/null; reload_theme "тени выкл" ;;
+        "Elevation 1..5…")
+            local lvl; lvl=$(pick "уровень elevation" <<<'1
+2
+3
+4
+5')
+            [[ -n "$lvl" ]] && { "$PY" "$THEME_PY" set shadow_elevation="$lvl" >/dev/null; reload_theme "elevation $lvl"; } ;;
+        "Прозрачность неактивных: "*)
+            "$PY" "$THEME_PY" set inactive_opacity="${choice##* }" >/dev/null; reload_theme "opacity ${choice##* }" ;;
+        "Blur: включить")            "$PY" "$THEME_PY" set blur=true  >/dev/null; reload_theme "blur вкл" ;;
+        "Blur: выключить")           "$PY" "$THEME_PY" set blur=false >/dev/null; reload_theme "blur выкл" ;;
+        "Анимации окон: включить")   "$PY" "$THEME_PY" set animations=true  >/dev/null; reload_theme "анимации вкл" ;;
+        "Анимации окон: выключить")  "$PY" "$THEME_PY" set animations=false >/dev/null; reload_theme "анимации выкл" ;;
+        "Открыть GUI-редактор темы") "$PY" "$CFG_DIR/tools/md3-theme-gui.py" >/dev/null 2>&1 & ;;
+        "Показать текущие токены")
+            if have rofi; then
+                "$PY" "$THEME_PY" export roles | rofi -dmenu -p "md.sys.color" \
+                    -theme-str "window{background-color:${MD3_SURFACE_CONTAINER};text-color:${MD3_ON_SURFACE};border-radius:${MD3_CORNER_RADIUS}px;width:520px;}"
+            else
+                "$PY" "$THEME_PY" show
+            fi ;;
+    esac
+}
+
+menu_services() {
+    local choice
+    choice=$(pick "Сервисы" <<EOF
+Перезапустить picom
+Перезапустить polybar
+Перечитать sxhkd
+Перезапустить всё (picom + polybar + sxhkd)
+Перечитать тему без рестарта
+Перезапустить bspwmrc (SIGHUP)
+Перезапустить bspwm (bspc wm -r)
+Показать логи
+EOF
+)
+    [[ -z "$choice" ]] && return 0
+    case "$choice" in
+        "Перезапустить picom")   bash "$CFG_DIR/bin/md3-reload" picom ;;
+        "Перезапустить polybar") bash "$CFG_DIR/bin/md3-reload" polybar ;;
+        "Перечитать sxhkd")      bash "$CFG_DIR/bin/md3-reload" sxhkd ;;
+        "Перезапустить всё"*)    bash "$CFG_DIR/bin/md3-reload" all ;;
+        "Перечитать тему"*)      bash "$CFG_DIR/bin/md3-reload" theme ;;
+        "Перезапустить bspwmrc"*) bash "$CFG_DIR/bin/md3-reload" config ;;
+        "Перезапустить bspwm "*) bspc wm -r ;;
+        "Показать логи")
+            local logdir="$XDG_STATE_HOME/bspwm-md3/log"
+            ( have alacritty && alacritty -e bash -c "tail -n 60 $logdir/*.log | less" ) \
+            || ( have kitty && kitty bash -c "tail -n 60 $logdir/*.log | less" ) \
+            || "${TERMINAL:-xterm}" -e bash -c "tail -n 60 $logdir/*.log | less" ;;
+    esac
+}
+
+menu_power() {
+    local choice
+    choice=$(pick "Сессия" <<EOF
+Заблокировать экран
+Выйти из сессии (bspc quit)
+Перезапустить bspwm
+Перезагрузка системы
+Выключить систему
+Отмена
+EOF
+)
+    [[ -z "$choice" ]] && return 0
+    case "$choice" in
+        "Заблокировать экран")
+            for l in betterlockscreen swaylock i3lock-gaps i3lock light-locker-command xautolock; do
+                have "$l" && { case "$l" in
+                    betterlockscreen) betterlockscreen -l dimblur ;;
+                    light-locker-command) light-locker-command -l ;;
+                    *) "$l" ;;
+                esac; return 0; }
+            done
+            notify "Экранный замок не найден (betterlockscreen/swaylock/i3lock)" ;;
+        "Выйти из сессии"*) bspc quit ;;
+        "Перезапустить bspwm") bspc wm -r ;;
+        "Перезагрузка системы") ( have systemctl && systemctl reboot ) || reboot ;;
+        "Выключить систему")    ( have systemctl && systemctl poweroff ) || poweroff ;;
+    esac
+}
+
+menu_main() {
+    local choice
+    choice=$(pick "Material 3" <<EOF
+Тема…
+Сервисы…
+Сессия…
+Открыть GUI-редактор темы
+Открыть папку конфига
+EOF
+)
+    case "$choice" in
+        "Тема…")   menu_theme ;;
+        "Сервисы…") menu_services ;;
+        "Сессия…") menu_power ;;
+        "Открыть GUI-редактор темы") "$PY" "$CFG_DIR/tools/md3-theme-gui.py" >/dev/null 2>&1 & ;;
+        "Открыть папку конфига")
+            have xdg-open && xdg-open "$CFG_DIR" ;;
+    esac
+}
+
+case "${1:-main}" in
+    theme)    menu_theme ;;
+    services) menu_services ;;
+    power)    menu_power ;;
+    main|*)   menu_main ;;
+esac

@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+#=============================================================================
+#  md3-reload — дёрнуть bspwmrc правильным сигналом
+#-----------------------------------------------------------------------------
+#  Использование:
+#    md3-reload theme      # SIGUSR1 → перечитать тему БЕЗ рестарта сервисов
+#    md3-reload config     # SIGHUP  → перезапустить bspwmrc (сервисы стоп→старт)
+#    md3-reload wm         # bspc wm -r
+#    md3-reload picom      # только композитор
+#    md3-reload polybar    # только панель
+#    md3-reload sxhkd      # только хоткеи
+#
+#  PID bspwmrc лежит в $XDG_STATE_HOME/bspwm-md3/pid/bspwmrc.pid — его пишет
+#  сам bspwmrc при старте (pkill по имени процесса ненадёжен).
+#=============================================================================
+set -uo pipefail
+
+XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+# CFG_DIR: явный BSPWM_MD3_DIR > каталог, где лежит этот скрипт (../ от bin/) >
+# стандартный ~/.config/bspwm-material3. Автодетект позволяет запускать bin/*
+# прямо из репозитория до установки.
+_self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_repo="$(cd "$(dirname "$(dirname "$_self")")" 2>/dev/null && pwd)"
+if [[ -n "${BSPWM_MD3_DIR:-}" ]]; then
+    CFG_DIR="$BSPWM_MD3_DIR"
+elif [[ -d "$_repo/tools" && -f "$_repo/bspwmrc" ]]; then
+    CFG_DIR="$_repo"
+else
+    CFG_DIR="$XDG_CONFIG_HOME/bspwm-material3"
+fi
+PID_DIR="$XDG_STATE_HOME/bspwm-md3/pid"
+LOG_DIR="$XDG_STATE_HOME/bspwm-md3/log"
+mkdir -p "$PID_DIR" "$LOG_DIR"
+
+MODE="${1:-theme}"
+say() { printf '\033[38;5;147m[md3]\033[0m %s\n' "$*"; }
+die() { printf '\033[38;5;203m[md3]\033[0m %s\n' "$*" >&2; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+rc_pid() {
+    local f="$PID_DIR/bspwmrc.pid"
+    [[ -r "$f" ]] || { echo ""; return 1; }
+    local pid; pid="$(cat "$f" 2>/dev/null)"
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && { echo "$pid"; return 0; }
+    echo ""
+    return 1
+}
+
+case "$MODE" in
+    theme)
+        pid="$(rc_pid)" || true
+        if [[ -n "${pid:-}" ]]; then
+            say "USR1 → bspwmrc (pid $pid): применяю тему"
+            kill -USR1 "$pid"
+        else
+            say "bspwmrc не найден — применяю тему напрямую"
+            bash "$CFG_DIR/bin/md3-apply" --restart
+        fi
+        ;;
+    config)
+        pid="$(rc_pid)" || true
+        if [[ -n "${pid:-}" ]]; then
+            say "HUP → bspwmrc (pid $pid): корректный рестарт сервисов"
+            kill -HUP "$pid"
+        elif have bspc; then
+            say "bspwmrc не найден — bspc wm -r"
+            bspc wm -r
+        else
+            die "некого перезапускать"
+        fi
+        ;;
+    wm)
+        have bspc || die "bspc не найден"
+        bash "$CFG_DIR/bin/md3-apply" --quiet
+        bspc wm -r && say "bspwm перезапущен"
+        ;;
+    picom)
+        have picom || die "picom не найден"
+        [[ -r "$PID_DIR/picom.pid" ]] && kill "$(cat "$PID_DIR/picom.pid")" 2>/dev/null
+        pkill -x picom 2>/dev/null
+        sleep 0.3
+        picom --config "$CFG_DIR/picom.conf" --log-file "$LOG_DIR/picom.log" &
+        echo $! > "$PID_DIR/picom.pid"
+        say "picom перезапущен (pid $!)"
+        ;;
+    polybar)
+        have polybar || die "polybar не найден"
+        if have polybar-msg && polybar-msg cmd restart >/dev/null 2>&1; then
+            say "polybar перезапущен через IPC"
+        else
+            pkill -x polybar 2>/dev/null; sleep 0.3
+            polybar -c "$CFG_DIR/polybar/config.ini" -r md3 >>"$LOG_DIR/polybar.log" 2>&1 &
+            echo $! > "$PID_DIR/polybar.pid"
+            say "polybar перезапущен (pid $!)"
+        fi
+        ;;
+    sxhkd)
+        have sxhkd || die "sxhkd не найден"
+        # sxhkd сам перечитывает конфиг по SIGUSR1 (без перезапуска процесса)
+        if [[ -r "$PID_DIR/sxhkd.pid" ]] && kill -0 "$(cat "$PID_DIR/sxhkd.pid")" 2>/dev/null; then
+            kill -USR1 "$(cat "$PID_DIR/sxhkd.pid")" && say "sxhkd перечитал конфиг"
+        else
+            pkill -x sxhkd 2>/dev/null; sleep 0.2
+            sxhkd -c "$CFG_DIR/sxhkd/sxhkdrc" >>"$LOG_DIR/sxhkd.log" 2>&1 &
+            echo $! > "$PID_DIR/sxhkd.pid"
+            say "sxhkd перезапущен (pid $!)"
+        fi
+        ;;
+    all)
+        "$0" theme; "$0" picom; "$0" polybar; "$0" sxhkd
+        ;;
+    *)
+        sed -n '2,20p' "$0"; exit 1
+        ;;
+esac
